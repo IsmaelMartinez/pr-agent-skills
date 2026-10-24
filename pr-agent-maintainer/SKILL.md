@@ -1,7 +1,7 @@
 ---
 name: pr-agent-maintainer
 description: "Use when reviewing, triaging or replying to an issue or pull request on The-PR-Agent/pr-agent itself as one of its maintainers or reviewers: verify a fix by running it, draft a short reply for the maintainer to approve, and post or merge only on their word."
-version: 1.0.0
+version: 1.1.0
 author: The-PR-Agent community
 license: MIT
 ---
@@ -56,6 +56,10 @@ A suite pass is not corroboration: run it on `main` too, because equal counts on
 
 Before a failing test becomes a finding, rule out your environment. Run tests the way `AGENTS.md` says (`PYTHONPATH=. uv run pytest ...`), which syncs to `uv.lock`; a virtualenv that drifted from the lock has produced fake "missing symbol" defects. Then ask what about the host could be responsible, since a local timing difference has made a sleep-based test fail that CI passed. Green CI on the same commit is the clue, and swapping the suspect primitive is the proof.
 
+Then try to break the fix, not just confirm it: feed the new logic edge inputs (empty, `None`, a string where a bool is expected, very large input), and grep the codebase for the same pattern the pull request fixes, since a sibling site it missed is often the most useful thing a review can add.
+
+Where the tests touch an optional dependency group (qdrant, pinecone, lancedb, pandas), confirm they ran rather than skipped (`pytest -rs`): only the dev group installs in CI, so an import-guarded test can pass by never running. Where a claim is about a library's API, install the version `uv.lock` pins into a scratch target and call it.
+
 Never let two agents share one worktree; they silently measure each other's checkout.
 
 ### 3. Run what the pull request exists to produce
@@ -67,6 +71,8 @@ Where the payoff is a log line, trigger it and read the output. PR-Agent logs th
 ### 4. Look for the smaller fix
 
 Once the fix is proven real, ask whether it could be much smaller: reuse an existing helper, widen one condition instead of adding a branch, delete rather than wrap. If a version under roughly half the lines passes the same tests, offer it as a committable suggestion with the line count. If the larger shape is genuinely needed, say why in one line so the next reviewer does not relitigate it. Moving code around is not simplification; the test is fewer lines or fewer concepts for the same behaviour.
+
+A performance pull request earns a merge only with a measured saving on a realistic input and a differential test showing the old and new code give identical results over many generated inputs. Check the premise against the API's documentation too: one such pull request reversed GitLab note order because it misread the endpoint's default sort.
 
 ### 5. Time every new regular expression
 
@@ -112,6 +118,8 @@ An "LGTM" posted as an ordinary comment approves nothing, and `reviewDecision` i
 
 `gh pr merge <n> --repo The-PR-Agent/pr-agent --squash` is the whole command. The repository merges by squash only, with the pull request title as the commit title and a blank body, so the description never becomes the commit message and nobody needs to rewrite it on those grounds. Head branches in this repository are deleted on merge; fork branches are not. GitHub counts a Copilot `APPROVED` review towards the required approval, so call nothing approved until a person with write access has approved it, checking `collaborators/{user}/permission` for each approving `User`. A maintainer cannot approve their own pull request; request a reviewer instead.
 
+A workflow-file change in a fork pull request only runs if the workflow triggers on `pull_request`; under `pull_request_target` GitHub runs `main`'s copy, so the change takes effect only after merge. Changes to workflow definitions still need a maintainer's explicit go-ahead.
+
 Before merging a batch, test the batch, because two pull requests each green on their own can break `main` together. Merge every approved head into one scratch worktree at today's `main`, run the full suite, and check the count equals the baseline plus each pull request's own delta; a shortfall is a semantic conflict. Merge in dependency order, then confirm with `gh run list --repo The-PR-Agent/pr-agent --branch main --event push --workflow Build-and-test` (without `--event push`, a fork's pull request from a branch named `main` shows up). If `main` goes red, stop merging and open a focused fix or revert pull request. Right after a merge GitHub reports `mergeable: UNKNOWN` for a while; run `git merge-tree` and the touched tests rather than waiting.
 
 ### 11. Carry rather than ask, once the ask is small or the author is gone
@@ -125,6 +133,8 @@ Check `maintainer_can_modify` and the fork's owner type first, because GitHub do
 Fold four event kinds into one timeline per item, because an answer can arrive as any of them: issue comments, reviews, review-thread comments, and pushes by the author. Drop bots by `__typename`, then read what the last event says. A contributor whose last word is "will check and come back" holds the ball; a maintainer who spoke last while waiting on a gated workflow that has since passed owes the move. Keep "they answered and nobody came back" apart from "nobody has ever replied".
 
 ## Sweeping the queue with subagents
+
+When a check of the queue, scheduled or by hand, finds an item that needs a look (a non-draft pull request nobody has replied to, a new pull request or issue, an author push or reply since the last review, or a parked item whose blocker has moved), start the review subagents straight away rather than reporting the item and waiting. They only research and draft; the table and drafts still go to the maintainer, and nothing posts or merges without their word.
 
 For a sweep, give each subagent two or three items and its own worktree, today's baseline suite count, the instruction to run tests through `uv run`, the presentation format above, and the rule that it posts nothing. Every draft that comes back gets the adversarial pass of step 8 before the maintainer sees it, and the table says that it ran. Drafts age while agents run: re-fetch every head and mergeable state at the moment you post, re-run cheap load-bearing measurements yourself, and re-read each draft against what earlier items in the same batch merged or closed.
 
