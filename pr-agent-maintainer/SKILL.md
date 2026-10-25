@@ -34,7 +34,7 @@ Everything else is short too: the verdict, the one or two facts that decide it, 
 
 Never work from memory or an earlier survey. Re-fetch the item before forming a view, because reviews land, authors force-push and other maintainers act between sessions.
 
-Skip draft pull requests unless the maintainer names one, and skip anything assigned to or parked with another maintainer. Never write anything in a public draft that reads as blaming another maintainer for a delay.
+Skip draft pull requests unless the maintainer names one, and skip anything assigned to or parked with another maintainer. An unassigned item that falls in another maintainer's usual area, such as a request to list a vendor in the docs, is routed to them by assignment rather than answered. Never write anything in a public draft that reads as blaming another maintainer for a delay.
 
 Pass `--repo The-PR-Agent/pr-agent` on every `gh pr` and `gh issue` call (`gh api` takes the full path instead). If you work from a fork or a worktree of one, `gh` resolves the repository from the current directory, and pull request numbers collide silently between the fork and upstream. In zsh, quote any `gh api` path containing `?`, or `pulls?state=all` is read as a glob.
 
@@ -98,7 +98,7 @@ Open with thanks for what they actually did, worded differently each time, and c
 
 Length is a defect with a number on it. A clean approve-and-merge is one sentence ("Thanks for picking this up, approving and merging."). Anything else aims at about 80 words and needs a reason to pass 120. Lead with the verdict. Say that you checked and what held, never how. Delete every sentence that would not change what the contributor does next.
 
-Inline by default, and the suggestion is the comment. Every point that names a file and line goes on that line, and where the fix is code it is a `suggestion` block with one sentence of why. The body holds only what cannot be anchored: thanks, the verdict, a judgement about scope. GitHub rejects the whole review with `422 Line could not be resolved` when one anchor falls outside the diff, so map anchors from the hunk headers. Apply each suggestion to a scratch copy at the head and run it, since it is applied verbatim.
+Inline by default, and the suggestion is the comment. Every point that names a file and line goes on that line, and where the fix is code it is a `suggestion` block with one sentence of why. The body holds only what cannot be anchored: thanks, the verdict, a judgement about scope. GitHub rejects the whole review with `422 Line could not be resolved` when one anchor falls outside the diff, so map anchors from the hunk headers. Apply each suggestion to a scratch copy at the head and run it, since it is applied verbatim, and grep for sibling sites of your own suggestion as you would for the contributor's fix: a suggestion that covers one path out of three gets committed as is.
 
 Then try to break it. Hand the draft to a second agent briefed to find errors rather than agree, with a numbered list of its claims and the one you are least sure of flagged, and ask for CORRECT, WRONG or OVERSTATED per claim with file and line evidence. Repeat until a pass finds nothing material, at most three passes; after that, show the maintainer what is still open. Then walk its findings against the revised draft one by one, run anything the draft asserts about `main` or the repository's settings, and reproduce each correction before acting on it; the checker is not an oracle.
 
@@ -106,7 +106,7 @@ Then try to break it. Hand the draft to a second agent briefed to find errors ra
 
 Post with a script that checks each item before it writes: still open, the expected author, and the head SHA you reviewed, passed as the review's `commit_id`. Refuse to post if anything moved.
 
-A review that carries a suggestion or an ask is `COMMENT` or `REQUEST_CHANGES`, never an approval. A real nit is left out so the approval stays clean.
+A review that carries a suggestion or an ask is `COMMENT` or `REQUEST_CHANGES`, never an approval. A real nit is left out so the approval stays clean. Word the body to match the event: a `COMMENT` that opens "Changes requested:" contradicts its own badge.
 
 Default to a pending review: omit `event` from `POST /repos/The-PR-Agent/pr-agent/pulls/{n}/reviews` and the review stays `PENDING`, visible only to its author and rendered as the contributor will see it, marked Pending. Create it with the maintainer's own token, and check they have no pending review on that pull request already, since GitHub allows one per user. They read it in place and submit it; submit directly only when told to. Afterwards re-read each pull request's reviews to confirm every one was submitted.
 
