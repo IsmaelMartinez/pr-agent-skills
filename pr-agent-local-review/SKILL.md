@@ -1,7 +1,7 @@
 ---
 name: pr-agent-local-review
 description: "Use when running PR-Agent's own /review on a GitHub pull request from a local checkout with the coding agent itself (a subagent) answering PR-Agent's prompt instead of an API model: to preview the exact comment PR-Agent would post, to test a PR-Agent change against a real PR, or to publish a locally run, signed review on a PR you are allowed to comment on."
-version: 1.1.0
+version: 1.2.0
 author: The-PR-Agent community
 license: MIT
 ---
@@ -78,6 +78,9 @@ Read the SHA with `git log -1 --format=%h` at run time and name the model the su
 - A strict prompt yields an empty `key_issues_to_review` on most PRs, and the comment then says "No major issues detected". That is PR-Agent's "only confident issues" rule, not a clean bill of health.
 - A stacked PR (one that contains another open PR's diff) is reviewed against its own copy of that code, so its findings can disagree with the base PR's.
 - Before publishing a batch, show a table (PR, findings, partial-budget flag) and the previews, then re-check each head: publish refuses a moved head, and the fix is to capture and answer again.
+- An author can edit the PR description between capture and preview. Preview then refuses with a prompt-drift error even though the head has not moved. Capture again into the same workdir, which moves the old answer aside as stale, and answer the new prompt.
+- Re-sync the virtualenv (`uv sync --frozen`) whenever the checkout's `uv.lock` changes before you capture, or the prompt is rendered by different dependencies than the checkout you sign with.
+- When the hosted PR-Agent bot also reviews the repository, a local run adds a second "PR Reviewer Guide" comment beside the bot's, and the two do not share review state. Skip PRs the bot has already reviewed at the same head unless the point is a side-by-side comparison.
 
 ## Before publishing on someone else's PR
 
