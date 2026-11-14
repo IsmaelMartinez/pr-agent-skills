@@ -28,6 +28,8 @@ Head each draft with the action as something the maintainer can say yes to (appr
 
 Everything else is short too: the verdict, the one or two facts that decide it, and what the maintainer has to choose. Not a walkthrough of the probes.
 
+If the host can show the item beside live provider state (a side panel or similar), pass it the exact texts and the head SHA read from the provider at that moment, never one copied from an agent's report. A moved head, CI that is failing, unread or not yet passed, an unknown merge state or a closed item is a finding to raise before asking for approval. An unknown merge state straight after other merges is normal: read it again. When summing up an item, roll its signals up worst first: all clear, worth a look, or blocking.
+
 ## The process
 
 ### 1. Pull live state, and always pass the repo
