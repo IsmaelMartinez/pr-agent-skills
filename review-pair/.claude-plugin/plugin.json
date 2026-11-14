@@ -1,0 +1,8 @@
+{
+  "name": "review-pair",
+  "version": "0.1.0",
+  "description": "Shows the pull requests or issues under review in a pane beside live GitHub state, with the repo's queue and open issues on q and i; the pr-agent-maintainer skill opens and fills it",
+  "author": { "name": "The-PR-Agent community" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

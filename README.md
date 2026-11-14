@@ -8,6 +8,12 @@ This repository holds skills for AI coding agents that work with [PR-Agent](http
 | --- | --- |
 | [`pr-agent-maintainer`](pr-agent-maintainer/SKILL.md) | An agent helps a maintainer or reviewer work through issues and pull requests on The-PR-Agent/pr-agent. The agent tests each fix by running it, drafts short replies, and posts or merges only after the maintainer approves. |
 
+## Plugins
+
+| Plugin | What it does |
+| --- | --- |
+| [`review-pair`](review-pair/README.md) | An optional Claude Code pane for `pr-agent-maintainer`: the items under review beside live GitHub state, one status line each. |
+
 ## Install a skill
 
 Skills here follow the open [Agent Skills](https://agentskills.io) format, so any agent that supports it can use them. Clone the repository and copy the skill folder into the folder your agent loads skills from; its documentation names that folder.

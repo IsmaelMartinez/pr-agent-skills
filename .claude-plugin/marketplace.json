@@ -1,0 +1,12 @@
+{
+  "name": "pr-agent-skills",
+  "owner": { "name": "The-PR-Agent community" },
+  "description": "Optional Claude Code plugins that go with the PR-Agent skills.",
+  "plugins": [
+    {
+      "name": "review-pair",
+      "source": "./review-pair",
+      "description": "Shows the pull requests or issues under review in a pane beside live GitHub state."
+    }
+  ]
+}
