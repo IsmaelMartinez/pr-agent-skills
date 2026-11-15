@@ -6,7 +6,7 @@ publish: replay the same answer with publishing on. Refuses unless a preview of 
          succeeded, the PR head and the rendered prompt are unchanged, and the comment about to be sent matches
          the preview.
 
-Usage: claude_review.py capture|preview|publish <pr_url> <workdir> [signature]
+Usage: local_review.py capture|preview|publish <pr_url> <workdir> [signature]
 Exit status is non-zero whenever the requested phase did not complete.
 """
 import asyncio
@@ -162,10 +162,10 @@ async def main(mode: str, pr_url: str, work: Path, signature: str = "") -> int:
         return result
 
     def config_errors_fail_closed(config_errors, git_provider):
-        # PR-Agent would post an error comment here and carry on with defaults; post nothing and fail instead.
+        # PR-Agent would post an error comment here and carry on with defaults. apply_repo_settings swallows any
+        # exception raised here, so record the error and let pinned_run refuse to start the review.
         state["error"] = RuntimeError(f"the target repository's PR-Agent settings could not be applied: "
                                       f"{[e.get('error') for e in config_errors]}")
-        raise state["error"]
 
     pr_agent_module.apply_repo_settings = apply_then_pin
     provider_utils.handle_configurations_errors = config_errors_fail_closed
@@ -218,6 +218,8 @@ async def main(mode: str, pr_url: str, work: Path, signature: str = "") -> int:
 
     async def pinned_run(self):
         try:
+            if state["error"] is not None:
+                raise state["error"]
             pin(get_settings())
             guard_sends(self.git_provider)
             state["head"] = self.git_provider.pr.head.sha
