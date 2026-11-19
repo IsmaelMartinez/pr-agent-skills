@@ -31,7 +31,7 @@ python3 $SKILL/scripts/collect.py --repo The-PR-Agent/pr-agent --releases 3 --wo
 python3 $SKILL/scripts/render.py release-map-work/collected.json --editorial release-map-work/editorial.json --out release-map.html
 ```
 
-`collect.py` takes `--repo` (default: the repository of the current directory), `--releases N` (default 3), `--no-unreleased` to leave out the default-branch lane, and `--workdir`. It prints one line per release with its PR count and the number of upgrade notes it found, then how many PRs are missing or were not merged through GitHub. Read that summary before going on: a release with zero upgrade notes either had none or uses a heading the script does not recognise.
+`collect.py` takes `--repo` (default: the repository of the current directory), `--releases N` (default 3, or `all` for every published release), `--no-unreleased` to leave out the default-branch lane, and `--workdir`. It prints one line per release with its PR count and the number of upgrade notes it found, then how many PRs are missing or were not merged through GitHub. Read that summary before going on: a release with zero upgrade notes either had none or uses a heading the script does not recognise.
 
 ## Write editorial.json
 

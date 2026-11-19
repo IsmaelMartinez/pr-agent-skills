@@ -64,8 +64,10 @@ def main():
             warnings.append(f"#{i['pr']} merged {i['date']}, outside {i['rel']} ({r['from']} to {r['to']})")
         if i["type"] not in TYPES:
             errors.append(f"#{i['pr']} has unknown type {i['type']}")
-    for c in col.get("unmapped_commits", []):
-        warnings.append(f"commit {c['sha'][:9]} in {c['rel']} has no PR number: {c['title']}")
+    unmapped = col.get("unmapped_commits", [])
+    if unmapped:
+        shown = "; ".join(f"{c['sha'][:9]} {c['title'][:50]}" for c in unmapped[:5])
+        warnings.append(f"{len(unmapped)} commit(s) carry no PR number and are not listed, e.g. {shown}")
 
     def text_of(pr):
         p = bodies / f"{pr}.md"
@@ -147,7 +149,9 @@ def main():
                   "an editorial grouping. Dates are UTC merge dates; shipped dates are release publication dates. "
                   "Draft and pre-releases are not counted."
                   + (f" {odd} item(s) were not merged through GitHub or no longer exist, and use commit data."
-                     if odd else ""),
+                     if odd else "")
+                  + (f" {len(unmapped)} commit(s) without a PR number (branch commits of merged PRs, or direct "
+                     "pushes) are not listed." if unmapped else ""),
     }
     # One pass, so text inside a PR title can never be taken for the other placeholder; escaping every "<"
     # keeps titles from closing the script element or opening a comment.

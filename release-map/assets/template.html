@@ -57,7 +57,11 @@ code{font-family:var(--f-mono);font-size:.86em;background:var(--soft);padding:0 
 /* upgrade */
 .upgrade{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
 .ublock{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:10px 14px}
-.ublock h3{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ublock h3{display:inline-flex;gap:10px;align-items:baseline;flex-wrap:wrap;max-width:calc(100% - 24px);vertical-align:baseline}
+.ublock>summary{color:var(--ink);font-size:inherit}
+.ublock>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.ublock .cnt{display:none}
+.ublock:not([open]) .cnt{display:inline}
 .ublock h3 a{font-size:.8rem;font-weight:400}
 .ublock ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:.9rem}
 .ublock p{margin:6px 0 0;font-size:.9rem}
@@ -140,7 +144,7 @@ footer a{overflow-wrap:anywhere}
   </section>
 
   <section class="panel mapbox" aria-label="Changes by day">
-    <div class="maphead"><h2>Changes by day</h2><div class="legend" id="legend"></div></div>
+    <div class="maphead"><h2 id="maptitle">Changes by day</h2><div class="legend" id="legend"></div></div>
     <div class="scroller" id="scroller"><svg id="map" role="img" aria-label="Merged changes per day, with headline changes marked"></svg></div>
   </section>
 
@@ -201,7 +205,7 @@ function matches(it, forMap){
   }
   if (forMap) return true;
   if (S.rel && it.rel!==S.rel) return false;
-  if (S.day && it.date!==S.day) return false;
+  if (S.day && bkey(it.date)!==S.day) return false;
   if (S.head && !S.q && !it.note) return false; // search always reaches every change
   return true;
 }
@@ -233,11 +237,11 @@ function renderHeader(){
 }
 function renderUpgrade(){
   const latest = RELS.find(r=>!r.unreleased);
-  const block = r => `<div class="ublock"><h3><span class="mono">${esc(relName(r))}</span>${r.unreleased?"":`<a href="${GH}/releases/tag/${encodeURIComponent(r.tag)}" target="_blank" rel="noopener">release notes ↗</a>`}<span class="eyebrow">${r.upgradeSource==="editorial"?"from PR descriptions":"from release notes"}</span></h3>
-    ${r.upgrade.length?`<ul>${r.upgrade.map(u=>`<li>${rich(u)}</li>`).join("")}</ul>`:`<p>No breaking changes, changed defaults or settings moves are listed${r.unreleased?" in the merged pull requests":""}.</p>`}</div>`;
-  const top = RELS.filter(r=>r.unreleased||r===latest), rest = RELS.filter(r=>!top.includes(r));
-  document.getElementById("ublocks").innerHTML = top.map(block).join("") +
-    (rest.length?`<details><summary>Earlier releases: ${rest.map(r=>esc(r.tag)).join(", ")}</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">${rest.map(block).join("")}</div></details>`:"");
+  const block = (r,open) => `<details class="ublock"${open?" open":""}><summary><h3><span class="mono">${esc(relName(r))}</span>${r.unreleased?"":`<a href="${GH}/releases/tag/${encodeURIComponent(r.tag)}" target="_blank" rel="noopener">release notes ↗</a>`}<span class="eyebrow">${r.upgradeSource==="editorial"?"from PR descriptions":"from release notes"}</span><span class="eyebrow cnt">· ${r.upgrade.length?`${r.upgrade.length} note${r.upgrade.length>1?"s":""}`:"no notes"}</span></h3></summary>
+    ${r.upgrade.length?`<ul>${r.upgrade.map(u=>`<li>${rich(u)}</li>`).join("")}</ul>`:`<p>No breaking changes, changed defaults or settings moves are listed${r.unreleased?" in the merged pull requests":""}.</p>`}</details>`;
+  const top = RELS.filter(r=>r.unreleased||r===latest), rest = RELS.filter(r=>!top.includes(r)&&r.upgrade.length), quiet = RELS.length-top.length-rest.length;
+  document.getElementById("ublocks").innerHTML = top.map(r=>block(r,true)).join("") +
+    (rest.length?`<details><summary>Earlier releases with upgrade notes: ${rest.map(r=>esc(r.tag)).join(", ")}${quiet?` (${quiet} other${quiet>1?"s":""} list none)`:""}</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">${rest.map(r=>block(r,false)).join("")}</div></details>`:"");
 }
 
 /* ---------- filters ---------- */
@@ -260,59 +264,75 @@ function renderFilters(){
     `<span><svg width="12" height="12" aria-hidden="true"><path d="M6 1 L11 6 L6 11 L1 6 Z" fill="var(--accent)"/></svg>headline</span><span><svg width="10" height="12" aria-hidden="true"><line x1="5" y1="0" x2="5" y2="12" stroke="var(--accent)" stroke-width="2"/></svg>release</span>`;
 }
 
-/* ---------- chart: one bar per day, headlines as diamonds above ---------- */
+/* ---------- chart: one bar per day (per week for long ranges), headlines as diamonds above ---------- */
 const allDates = ITEMS.map(i=>i.date).sort();
-const D0 = allDates[0], D1 = META.checked > allDates.at(-1) ? META.checked : allDates.at(-1);
-const NDAYS = dayDiff(D0,D1)+1;
-const perDay={}, headDay={}; ITEMS.forEach(i=>{perDay[i.date]=(perDay[i.date]||0)+1; if(i.note) headDay[i.date]=(headDay[i.date]||0)+1;});
-const MAXDAY = Math.max(...Object.values(perDay)), MAXHEAD = Math.max(0,...Object.values(headDay));
-const BARMAX=84, DSTEP=9, TOP=42, TRACK=BARMAX+MAXHEAD*DSTEP+14, LEFT=12;
-let firstPaint = true, DAYW = 22;
+const D1 = META.checked > allDates.at(-1) ? META.checked : allDates.at(-1);
+const BUCKET = dayDiff(allDates[0],D1) > 120 ? 7 : 1; // days per bar
+const monday = d => { const t=Date.parse(d+"T00:00:00Z"), wd=(new Date(t).getUTCDay()+6)%7; return new Date(t-wd*864e5).toISOString().slice(0,10); };
+const D0 = BUCKET===7 ? monday(allDates[0]) : allDates[0];
+const bkey = d => BUCKET===1 ? d : new Date(Date.parse(D0+"T00:00:00Z")+Math.floor(dayDiff(D0,d)/7)*7*864e5).toISOString().slice(0,10);
+const bname = k => BUCKET===1 ? fmtDay(k) : "Week of "+fmtDate(k);
+const NB = Math.floor(dayDiff(D0,D1)/BUCKET)+1, DCAP=6;
+const perB={}, headB={}; ITEMS.forEach(i=>{const k=bkey(i.date); perB[k]=(perB[k]||0)+1; if(i.note) headB[k]=(headB[k]||0)+1;});
+const MAXB = Math.max(...Object.values(perB)), MAXHEAD = Math.min(DCAP, Math.max(0,...Object.values(headB)));
+const BARMAX=84, DSTEP=9, TOP=42, TRACK=BARMAX+MAXHEAD*DSTEP+18, LEFT=12;
+let firstPaint = true, UNIT = 22;
+const bx = k => LEFT+Math.round(dayDiff(D0,k)/BUCKET)*UNIT;          // left edge of a bucket
+const tx = d => LEFT+(dayDiff(D0,d)+1)/BUCKET*UNIT;                     // right edge of a day
 function renderMap(vis){
-  DAYW = Math.max(13, Math.min(34, Math.floor((document.getElementById("scroller").clientWidth-LEFT-12)/NDAYS)));
-  const BW = DAYW-4, dx = d => LEFT+dayDiff(D0,d)*DAYW;
-  const W=LEFT+NDAYS*DAYW+12, H=TOP+TRACK+6, base=TOP+TRACK, k=BARMAX/MAXDAY, svg=document.getElementById("map");
+  const avail = document.getElementById("scroller").clientWidth-LEFT-12;
+  UNIT = BUCKET===1 ? Math.max(13, Math.min(34, Math.floor(avail/NB))) : Math.max(5, Math.min(22, Math.floor(avail/NB)));
+  const BW = Math.max(3, UNIT-(BUCKET===1?4:2)), W=LEFT+NB*UNIT+12, H=TOP+TRACK+6, base=TOP+TRACK, k=BARMAX/MAXB, svg=document.getElementById("map");
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("width",W); svg.setAttribute("height",H);
-  let s="";
-  for(let d=0; d<NDAYS; d++){
-    const dt=new Date(Date.parse(D0+"T00:00:00Z")+d*864e5), wd=dt.getUTCDay(), x=LEFT+d*DAYW;
-    if(wd===0||wd===6) s+=`<rect x="${x}" y="${TOP}" width="${DAYW}" height="${TRACK}" fill="var(--weekend)"/>`;
-    if(d===0||wd===1) s+=`<text x="${x+1}" y="${TOP-6}" font-size="9.5">${dt.toLocaleDateString("en-GB",{day:"numeric",month:"short",timeZone:"UTC"})}</text>`;
+  let s="", lastLabel=-99;
+  for(let b=0; b<NB; b++){
+    const start=new Date(Date.parse(D0+"T00:00:00Z")+b*BUCKET*864e5), x=LEFT+b*UNIT;
+    if(BUCKET===1){
+      const wd=start.getUTCDay();
+      if(wd===0||wd===6) s+=`<rect x="${x}" y="${TOP}" width="${UNIT}" height="${TRACK}" fill="var(--weekend)"/>`;
+      if((b===0||wd===1) && x-lastLabel>=44){ s+=`<text x="${x+1}" y="${TOP-6}" font-size="9.5">${start.toLocaleDateString("en-GB",{day:"numeric",month:"short",timeZone:"UTC"})}</text>`; lastLabel=x; }
+    } else if((b===0 || start.getUTCDate()<=7) && x-lastLabel>=52){ // first week of a month, spaced out
+      s+=`<text x="${x+1}" y="${TOP-6}" font-size="9.5">${start.toLocaleDateString("en-GB",{month:"short",year:"2-digit",timeZone:"UTC"})}</text><line x1="${x}" y1="${TOP}" x2="${x}" y2="${base}" stroke="var(--line)" stroke-dasharray="2 3"/>`; lastLabel=x;
+    }
   }
   s+=`<line x1="${LEFT}" y1="${base}" x2="${W-6}" y2="${base}" stroke="var(--line)"/>`;
-  RELS.slice().reverse().forEach(r=>{
-    const x0=Math.max(LEFT,dx(r.from)), x1=dx(r.to)+DAYW, sel=S.rel===r.tag;
-    s+=`<g class="span" data-rel="${esc(r.tag)}"><rect x="${x0+1}" y="4" width="${Math.max(0,x1-x0-2)}" height="17" rx="3" fill="${sel?"var(--accent)":"var(--soft)"}"/>`+
-       `<text x="${(x0+x1)/2}" y="16.5" font-size="10.5" text-anchor="middle" style="fill:${sel?"var(--accent-ink)":"var(--ink)"}">${esc(relName(r))}</text></g>`;
-    if(!r.unreleased) s+=`<line x1="${x1}" y1="${TOP-2}" x2="${x1}" y2="${base}" stroke="var(--accent)" stroke-width="1.6"/>`;
+  RELS.slice().reverse().forEach((r,i)=>{
+    const x0=Math.max(LEFT,tx(r.from)), x1=tx(r.to), sel=S.rel===r.tag, name=relName(r), wide=x1-x0 >= name.length*6.6+8;
+    s+=`<g class="span" data-rel="${esc(r.tag)}"><title>${esc(name)}</title><rect x="${x0+0.5}" y="4" width="${Math.max(1,x1-x0-1)}" height="17" rx="2" fill="${sel?"var(--accent)":i%2?"var(--soft)":"var(--line)"}"/>`+
+       (wide?`<text x="${(x0+x1)/2}" y="16.5" font-size="10.5" text-anchor="middle" style="fill:${sel?"var(--accent-ink)":"var(--ink)"}">${esc(name)}</text>`:"")+`</g>`;
+    if(!r.unreleased) s+=`<line x1="${x1}" y1="${TOP-2}" x2="${x1}" y2="${base}" stroke="var(--accent)" stroke-width="${BUCKET===1?1.6:1}" opacity="${BUCKET===1?1:.55}"/>`;
   });
-  const days={}; vis.forEach(it=>{(days[it.date]=days[it.date]||[]).push(it);});
-  Object.entries(days).forEach(([date,xs])=>{
-    const on = !S.rel || xs.some(i=>i.rel===S.rel), op = on ? 1 : .28, x=dx(date)+2;
+  const groups={}; vis.forEach(it=>{const key=bkey(it.date); (groups[key]=groups[key]||[]).push(it);});
+  Object.entries(groups).forEach(([key,xs])=>{
+    const on = !S.rel || xs.some(i=>i.rel===S.rel), op = on ? 1 : .28, x=bx(key)+(BUCKET===1?2:1);
     let y=base;
     GROUPS.forEach(([g])=>{const n=xs.filter(i=>grp(i.type)===g).length; if(!n) return; const h=n*k; y-=h;
-      s+=`<rect class="bar" data-day="${date}" x="${x}" y="${y}" width="${BW}" height="${h}" fill="${tcol(g)}" opacity="${op}"/>`;});
-    if(S.day===date) s+=`<rect x="${x-1.5}" y="${y-1.5}" width="${BW+3}" height="${base-y+1.5}" fill="none" stroke="var(--ink)" stroke-width="1.5" pointer-events="none"/>`;
-    xs.filter(i=>i.note).sort((a,b)=>a.pr-b.pr).forEach((it,j)=>{
-      const cx=x+BW/2, cy=y-7-j*DSTEP, r=S.sel===it.pr?5.5:4.2, off=S.rel&&it.rel!==S.rel;
+      s+=`<rect class="bar" data-b="${key}" x="${x}" y="${y}" width="${BW}" height="${h}" fill="${tcol(g)}" opacity="${op}"/>`;});
+    if(S.day===key) s+=`<rect x="${x-1.5}" y="${y-1.5}" width="${BW+3}" height="${base-y+1.5}" fill="none" stroke="var(--ink)" stroke-width="1.5" pointer-events="none"/>`;
+    const heads=xs.filter(i=>i.note).sort((a,b)=>(S.sel===b.pr)-(S.sel===a.pr)||a.pr-b.pr), rr=Math.min(4.2,BW/2+1);
+    heads.slice(0,DCAP).forEach((it,j)=>{
+      const cx=x+BW/2, cy=y-7-j*DSTEP, r=S.sel===it.pr?rr+1.3:rr, off=S.rel&&it.rel!==S.rel;
       s+=`<path class="dia" data-pr="${it.pr}" d="M${cx} ${cy-r} L${cx+r} ${cy} L${cx} ${cy+r} L${cx-r} ${cy} Z" fill="${off?"var(--muted)":"var(--accent)"}" opacity="${off?.35:1}"${S.sel===it.pr?` stroke="var(--ink)" stroke-width="1.5"`:""}/>`;
     });
+    if(heads.length>DCAP && BUCKET===1) s+=`<text class="bar" data-b="${key}" x="${x+BW/2}" y="${y-7-DCAP*DSTEP+3}" font-size="8.5" text-anchor="middle">+${heads.length-DCAP}</text>`;
   });
   svg.innerHTML=s;
+  document.getElementById("maptitle").textContent = BUCKET===1 ? "Changes by day" : "Changes by week";
   const sc=document.getElementById("scroller");
   if(firstPaint){ sc.scrollLeft=sc.scrollWidth; firstPaint=false; }
 }
 const tip=document.getElementById("tip"), svgEl=document.getElementById("map");
 svgEl.addEventListener("mousemove",e=>{
-  const d=e.target.closest(".dia"), b=e.target.closest(".bar");
+  const d=e.target.closest(".dia"), b=e.target.closest(".bar"), g=e.target.closest(".span");
   if(d){const it=byPr[d.dataset.pr]; tip.innerHTML=`${esc(it.note.h)}<br><span class="mono">#${it.pr} · ${esc(it.author)}</span>`;}
-  else if(b){const xs=MAPVIS.filter(i=>i.date===b.dataset.day); tip.innerHTML=`${fmtDay(b.dataset.day)}: ${xs.length} change${xs.length>1?"s":""}<br><span class="mono">${GROUPS.map(([g,l])=>`${xs.filter(i=>grp(i.type)===g).length} ${l.toLowerCase()}`).join(" · ")}</span>`;}
+  else if(b){const xs=MAPVIS.filter(i=>bkey(i.date)===b.dataset.b), hn=xs.filter(i=>i.note).length; tip.innerHTML=`${bname(b.dataset.b)}: ${xs.length} change${xs.length>1?"s":""}${hn?`, ${hn} headline${hn>1?"s":""}`:""}<br><span class="mono">${GROUPS.map(([g,l])=>`${xs.filter(i=>grp(i.type)===g).length} ${l.toLowerCase()}`).join(" · ")}</span>`;}
+  else if(g){const r=RELS[relIdx[g.dataset.rel]]; tip.innerHTML=`${esc(relName(r))}<br><span class="mono">${r.unreleased?"since":"shipped"} ${fmtDate(r.unreleased?r.from:r.to)} · ${stats(r.tag).n} changes</span>`;}
   else {tip.hidden=true;return;}
   tip.hidden=false; tip.style.left=Math.min(e.clientX+12, innerWidth-310)+"px"; tip.style.top=(e.clientY+14)+"px";});
 svgEl.addEventListener("mouseleave",()=>tip.hidden=true);
 svgEl.addEventListener("click",e=>{
   const d=e.target.closest(".dia"); if(d) return select(+d.dataset.pr,true);
-  const b=e.target.closest(".bar"); if(b){ S.day = S.day===b.dataset.day ? "" : b.dataset.day; return update(); }
+  const b=e.target.closest(".bar"); if(b){ S.day = S.day===b.dataset.b ? "" : b.dataset.b; return update(); }
   const g=e.target.closest(".span"); if(g) setRel(g.dataset.rel);});
 
 /* ---------- list + detail ---------- */
@@ -355,14 +375,14 @@ function update(centre){
   VIS=ORDER.filter(it=>matches(it)); MAPVIS=ORDER.filter(it=>matches(it,true));
   if(S.sel && !VIS.some(i=>i.pr===S.sel)) S.sel=null;
   document.getElementById("shown").textContent=`${VIS.length} of ${ITEMS.length} shown`;
-  document.getElementById("f-day").innerHTML = S.day ? `<button class="chip" type="button" aria-pressed="true" id="f-day-x">${fmtDay(S.day)} ✕</button>` : "";
+  document.getElementById("f-day").innerHTML = S.day ? `<button class="chip" type="button" aria-pressed="true" id="f-day-x">${bname(S.day)} ✕</button>` : "";
   if(S.day) document.getElementById("f-day-x").onclick=()=>{S.day="";update();};
   document.querySelectorAll("[data-type]").forEach(b=>b.setAttribute("aria-pressed",S.types.has(b.dataset.type)));
   document.querySelectorAll("[data-theme-key]").forEach(b=>b.setAttribute("aria-pressed",S.themes.has(b.dataset.themeKey)));
   document.querySelectorAll("button[data-rel]").forEach(c=>c.setAttribute("aria-pressed",S.rel===c.dataset.rel));
   renderMap(MAPVIS); renderList(); renderDetail();
   if(centre && S.rel){ const r=RELS[relIdx[S.rel]], sc=document.getElementById("scroller");
-    sc.scrollLeft = LEFT+((dayDiff(D0,r.from)+dayDiff(D0,r.to))/2)*DAYW - sc.clientWidth/2; }
+    sc.scrollLeft = (tx(r.from)+tx(r.to))/2 - sc.clientWidth/2; }
 }
 document.getElementById("f-head").checked=HAS_HEADS;
 renderHeader(); renderUpgrade(); renderFilters(); renderFooter(); update();
