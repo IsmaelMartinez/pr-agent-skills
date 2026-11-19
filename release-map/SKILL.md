@@ -19,7 +19,7 @@ Two scripts do the mechanical work, and you do the editorial part in between:
 ## Prerequisites and scope
 
 - `gh`, authenticated with read access to the repository, and Python 3. Nothing else: no packages, no network calls other than through `gh`.
-- GitHub repositories only. The scripts read compare ranges, releases and pull requests through the GitHub API. They work on any GitHub repository that squash-merges with a `(#123)` suffix on the commit title, as PR-Agent does; commits without one are reported, not dropped silently.
+- GitHub repositories only. The scripts read compare ranges, releases and pull requests through the GitHub API. They recognise squash-merge titles ending in `(#123)` and `Merge pull request #123` merge commits; other commits are counted and reported, not dropped silently.
 - Published releases only. Draft and pre-releases are skipped, so an unpublished release shows up as the Unreleased lane.
 
 ## Run it
@@ -74,6 +74,6 @@ The key check catches invented or misspelled keys, not inverted logic: read each
 
 ## Known limits
 
-- Squash-merge titles only: a merge commit or rebase without `(#123)` is listed as unmapped.
+- A PR number in a commit title is trusted only when GitHub names that commit as the PR's merge commit or the PR merged inside the release's window, so numbers from a merged fork's own history are reported instead of mislabelled. Rebase merges, whose commits carry no PR number, are counted as unmapped.
 - A PR record that GitHub no longer has falls back to commit data and links to the commit; a PR closed without merging, whose change landed as a direct commit, uses the commit date. The page footer counts both.
 - Dates are UTC merge dates; a release's shipped date is its GitHub publication date.
