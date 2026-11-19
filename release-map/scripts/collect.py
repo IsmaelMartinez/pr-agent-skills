@@ -1,0 +1,241 @@
+"""Collect every merged pull request between recent releases of a GitHub repository.
+
+Writes <workdir>/collected.json (releases newest first, one item per PR) and <workdir>/bodies/<pr>.md
+(the full PR description, for whoever writes headline notes). Needs only `gh` (authenticated) and Python 3.
+
+Usage: collect.py [--repo OWNER/NAME] [--releases N] [--no-unreleased] [--workdir DIR]
+"""
+import argparse
+import datetime
+import json
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+PR_IN_TITLE = re.compile(r"\(#(\d+)\)\s*$")
+MERGE_COMMIT = re.compile(r"^Merge pull request #(\d+) from (\S+)")
+BUMP = re.compile(r"^chore\(release\):\s*bump version", re.IGNORECASE)
+PREFIX = re.compile(r"^(\w+)(?:\(([^)]*)\))?(!)?:\s*")
+TYPES = {"feat": "feat", "fix": "fix", "perf": "perf", "refactor": "refactor", "docs": "docs", "doc": "docs",
+         "revert": "fix", "chore": "chore", "ci": "chore", "test": "chore", "tests": "chore", "build": "chore",
+         "deps": "chore", "style": "chore"}
+VERBS = {"add": "feat", "allow": "feat", "enable": "feat", "support": "feat", "fix": "fix", "redact": "fix",
+         "prevent": "fix", "handle": "fix", "document": "docs", "bump": "chore", "update": "chore"}
+LABELS = [("feature", "feat"), ("enhancement", "feat"), ("bug", "fix"), ("performance", "perf"),
+          ("documentation", "docs"), ("refactoring", "refactor"), ("dependencies", "chore"), ("chore", "chore")]
+UPGRADE_HEADING = re.compile(r"^#{2,3}\s.*(breaking|upgrade|important)", re.IGNORECASE)
+HEADING = re.compile(r"^#{1,6}\s")
+ITEM = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
+
+
+def gh(*args, retries=3):
+    for attempt in range(retries):
+        r = subprocess.run(["gh", *args], check=False, capture_output=True, text=True)
+        if r.returncode == 0:
+            return r.stdout
+        if attempt < retries - 1 and re.search(r"HTTP 5\d\d|secondary rate|timed out", r.stderr, re.IGNORECASE):
+            time.sleep(2 ** attempt * 3)
+            continue
+        sys.exit(f"gh {' '.join(args[:3])} failed: {r.stderr.strip()}")
+
+
+def releases(repo, count):
+    rows = json.loads(gh("release", "list", "--repo", repo, "--limit", "1000", "--exclude-drafts",
+                         "--exclude-pre-releases", "--json", "tagName,publishedAt"))
+    rows.sort(key=lambda r: r["publishedAt"], reverse=True)
+    if count != "all" and not (count.isdigit() and int(count) >= 1):
+        sys.exit("--releases takes a number of at least 1, or all")
+    count = len(rows) - 1 if count == "all" else int(count)
+    if len(rows) < count + 1:
+        sys.exit(f"need {count + 1} published releases to compare {count}; found {len(rows)}")
+    out = []
+    for cur, prev in zip(rows[:count], rows[1:count + 1]):
+        out.append({"tag": cur["tagName"], "prev": prev["tagName"], "from": prev["publishedAt"][:10],
+                    "to": cur["publishedAt"][:10], "unreleased": False})
+    return out
+
+
+def shift(day, n):
+    return (datetime.date.fromisoformat(day) + datetime.timedelta(days=n)).isoformat()
+
+
+def compare(repo, base, head):
+    jq = ".commits[] | [.sha, .commit.committer.date, (.author.login // .commit.author.name), " \
+         "(.commit.message | split(\"\\n\")[0])] | @tsv"
+    lines = gh("api", f"repos/{repo}/compare/{base}...{head}", "--paginate", "--jq", jq).splitlines()
+    return [dict(zip(("sha", "date", "author", "title"), ln.split("\t", 3))) for ln in lines if ln]
+
+
+def pr_metadata(repo, numbers):
+    owner, name = repo.split("/")
+    found = {}
+    batches = [numbers[k:k + 40] for k in range(0, len(numbers), 40)]
+    attempt = 0
+    while batches:
+        chunk = batches[0]
+        fields = ("number title state mergedAt mergeCommit{oid} headRefName headRepositoryOwner{login} author{login} "
+                  "labels(first:30){nodes{name}} body")
+        query = "query{repository(owner:%s,name:%s){%s}}" % (json.dumps(owner), json.dumps(name), "".join(
+            f"p{n}:pullRequest(number:{n}){{{fields}}}" for n in chunk))
+        r = subprocess.run(["gh", "api", "graphql", "-f", f"query={query}"],
+                           check=False, capture_output=True, text=True)
+        try:
+            repo_data = (json.loads(r.stdout or "{}").get("data") or {}).get("repository")
+        except json.JSONDecodeError:
+            repo_data = None
+        if repo_data is None:  # the whole batch failed (rate limit, auth, 5xx): never read that as missing PRs
+            if attempt < 3:
+                attempt += 1
+                time.sleep(2 ** attempt * 5)
+                continue
+            sys.exit(f"GraphQL batch for PRs {chunk[0]}..{chunk[-1]} failed: {(r.stderr or r.stdout).strip()[:300]}")
+        for v in repo_data.values():
+            if v:  # a null entry is a PR number GitHub no longer has
+                found[v["number"]] = v
+        batches.pop(0)
+        attempt = 0
+    return found
+
+
+def upgrade_notes(repo, tag):
+    """Bullets of the release notes' breaking-changes or upgrade-notes section, with links reduced to #NNNN."""
+    body = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "body"))["body"] or ""
+    lines, inside = [], False
+    for ln in body.splitlines():
+        if HEADING.match(ln):
+            inside = bool(UPGRADE_HEADING.match(ln))
+            continue
+        if inside and ITEM.match(ln):
+            text = re.sub(r"\[#(\d+)\]\([^)]*\)", r"#\1", ITEM.sub("", ln, count=1))
+            text = re.sub(r"https://github\.com/[^\s)]+/pull/(\d+)", r"#\1", text)
+            lines.append(text.strip())
+    return lines
+
+
+def classify(title, labels):
+    m = PREFIX.match(title)
+    if m and m.group(1).lower() in TYPES:
+        return TYPES[m.group(1).lower()], (m.group(2) or "").strip().lower() or None, "prefix", bool(m.group(3))
+    verb = (re.match(r"^(\w+)", title) or [None, ""])[1].lower()
+    if verb in VERBS:
+        return VERBS[verb], None, "verb", False
+    lower = [lb.lower() for lb in labels]
+    for lb, t in LABELS:
+        if lb in lower:
+            return t, None, "label", False
+    return "chore", None, "default", False
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--repo")
+    ap.add_argument("--releases", default="3", help="how many releases to compare, or \"all\"")
+    ap.add_argument("--no-unreleased", action="store_true")
+    ap.add_argument("--workdir", default="release-map-work")
+    a = ap.parse_args()
+    repo = a.repo or json.loads(gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
+    work = Path(a.workdir)
+    shutil.rmtree(work / "bodies", ignore_errors=True)  # never mix descriptions from an earlier run
+    (work / "bodies").mkdir(parents=True)
+    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+    rels = releases(repo, a.releases)
+    for r in rels:
+        r["upgrade"] = upgrade_notes(repo, r["tag"])
+    if not a.no_unreleased:
+        branch = json.loads(gh("repo", "view", repo, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"]
+        rels.insert(0, {"tag": "Unreleased", "prev": rels[0]["tag"], "head": branch, "from": rels[0]["to"],
+                        "to": today, "unreleased": True, "upgrade": []})
+
+    candidates, unmapped = [], []
+    for r in rels:
+        for c in compare(repo, r["prev"], r.get("head", r["tag"])):
+            if BUMP.match(c["title"]):
+                continue
+            m = PR_IN_TITLE.search(c["title"]) or MERGE_COMMIT.match(c["title"])
+            if not m:
+                unmapped.append({"sha": c["sha"], "title": c["title"], "rel": r["tag"]})
+                continue
+            candidates.append({"pr": int(m.group(1)), "rel": r["tag"], "sha": c["sha"], "commit_date": c["date"][:10],
+                               "commit_author": c["author"], "title_line": c["title"],
+                               "merge_from": m.group(2) if m.re is MERGE_COMMIT else None,
+                               "commit_title": PR_IN_TITLE.sub("", c["title"]).strip()})
+    if not candidates:
+        sys.exit("no pull requests found in the compared ranges")
+
+    # A PR number in a commit title is trusted when GitHub names that commit as the PR's merge commit; when a
+    # "Merge pull request #N from owner/branch" commit names the PR's own head branch; or, for a "(#N)" title,
+    # when the PR merged before the release shipped. Anything else is a number from other history (a merged
+    # fork's own PRs): it is reported, not listed. Of several plausible commits for one PR the first is kept.
+    meta = pr_metadata(repo, sorted({c["pr"] for c in candidates}))
+    shipped = {r["tag"]: shift(r["to"], 1) for r in rels}
+    items, repeats, chosen = [], [], {}
+    for c in candidates:
+        p = meta.get(c["pr"])
+        merged = (p or {}).get("mergedAt")
+        exact = bool(p and (p.get("mergeCommit") or {}).get("oid") == c["sha"])
+        if exact or not merged:
+            plausible = True
+        elif c["merge_from"]:
+            head_owner = (p.get("headRepositoryOwner") or {}).get("login")
+            plausible = c["merge_from"] in (f"{head_owner}/{p['headRefName']}", p["headRefName"]) or (
+                not head_owner and c["merge_from"].endswith("/" + p["headRefName"]))
+        else:
+            plausible = merged[:10] <= shipped[c["rel"]]
+        if not plausible:
+            unmapped.append({"sha": c["sha"], "title": c["title_line"], "rel": c["rel"],
+                             "reason": f"#{c['pr']} is a different pull request (merged {merged[:10]})"})
+        elif c["pr"] in chosen and not (exact and not chosen[c["pr"]]["exact"]):
+            repeats.append({"sha": c["sha"], "title": c["title_line"], "rel": c["rel"],
+                            "first": chosen[c["pr"]]["rel"]})
+        else:
+            if c["pr"] in chosen:
+                old = chosen[c["pr"]]
+                items.remove(old["item"])
+                repeats.append({"sha": old["item"]["sha"], "title": old["item"]["title_line"], "rel": old["rel"],
+                                "first": c["rel"]})
+            chosen[c["pr"]] = {"rel": c["rel"], "exact": exact, "item": c}
+            items.append(c)
+    for i in items:
+        i.pop("title_line")
+        i.pop("merge_from")
+
+    for i in items:
+        p = meta.get(i["pr"])
+        if p is None:
+            i.update(state="MISSING", title=i["commit_title"], date=i["commit_date"], author=i["commit_author"],
+                     labels=[], flag="The PR record is no longer available; details come from the commit.")
+        else:
+            i.update(state=p["state"], title=p["title"], author=(p["author"] or {}).get("login") or "ghost",
+                     labels=[n["name"] for n in p["labels"]["nodes"]])
+            if p["state"] == "MERGED" and p["mergedAt"]:
+                i["date"] = p["mergedAt"][:10]
+            else:
+                i["date"] = i["commit_date"]
+                i["flag"] = "The PR was not merged through GitHub; the change landed as a direct commit."
+            (work / "bodies" / f"{i['pr']}.md").write_text(p["body"] or "")
+        if "dependabot" in i["author"].lower():
+            i["author"] = "Dependabot"
+        i["type"], i["scope"], i["type_source"], i["breaking"] = classify(i["title"], i["labels"])
+        if i["author"] == "Dependabot":
+            i["type"], i["scope"] = "chore", i["scope"] or "deps"
+        for k in ("commit_date", "commit_author", "commit_title"):
+            i.pop(k)
+
+    out = {"repo": repo, "generated": today, "releases": rels, "items": items, "unmapped_commits": unmapped,
+           "repeated_commits": repeats}
+    (work / "collected.json").write_text(json.dumps(out, indent=1, ensure_ascii=False))
+    for r in rels:
+        n = sum(1 for i in items if i["rel"] == r["tag"])
+        print(f"{r['tag']:>12}  {r['prev']}...{r.get('head', r['tag'])}  {n} PRs  {len(r['upgrade'])} upgrade notes")
+    odd = [i for i in items if i["state"] != "MERGED"]
+    print(f"{len(items)} PRs, {len(odd)} not merged through GitHub or missing, {len(unmapped)} commits without a PR, "
+          f"{len(repeats)} extra commits for a PR already listed")
+    print(f"wrote {work / 'collected.json'} and {len(list((work / 'bodies').iterdir()))} bodies")
+
+
+if __name__ == "__main__":
+    main()

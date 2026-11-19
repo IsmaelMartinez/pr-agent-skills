@@ -8,6 +8,7 @@ This repository holds skills for AI coding agents that work with [PR-Agent](http
 | --- | --- |
 | [`pr-agent-maintainer`](pr-agent-maintainer/SKILL.md) | An agent helps a maintainer or reviewer work through issues and pull requests on The-PR-Agent/pr-agent. The agent tests each fix by running it, drafts short replies, and posts or merges only after the maintainer approves. |
 | [`pr-agent-local-review`](pr-agent-local-review/SKILL.md) | An agent runs PR-Agent's own `/review` on a GitHub pull request from a local checkout, answering PR-Agent's prompt itself instead of an API model, to preview the exact comment, test a PR-Agent change, or publish a signed review after approval. |
+| [`release-map`](release-map/SKILL.md) | A maintainer wants one shareable page after a release: every merged pull request across the last few releases and the default branch, upgrade notes first, headline changes in plain English, and a per-day chart. |
 
 ## Plugins
 
