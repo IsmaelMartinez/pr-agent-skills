@@ -149,11 +149,11 @@ def main():
                   + (f" {odd} item(s) were not merged through GitHub or no longer exist, and use commit data."
                      if odd else ""),
     }
-    page = TEMPLATE.read_text()
-    page = page.replace("/*ITEMS*/[]", json.dumps(out_items, ensure_ascii=False, separators=(",", ":"))
-                        .replace("</", "<\\/"))
-    page = page.replace("/*META*/{}", json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
-                        .replace("</", "<\\/"))
+    # One pass, so text inside a PR title can never be taken for the other placeholder; escaping every "<"
+    # keeps titles from closing the script element or opening a comment.
+    payloads = {k: json.dumps(v, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
+                for k, v in (("ITEMS", out_items), ("META", meta))}
+    page = re.sub(r"/\*(ITEMS|META)\*/(?:\[\]|\{\})", lambda m: payloads[m.group(1)], TEMPLATE.read_text(), count=2)
     Path(a.out).write_text(page)
     notes = sum("note" in i for i in out_items)
     print(f"wrote {a.out}: {len(out_items)} changes, {notes} headlines, {len(warnings)} warning(s)")

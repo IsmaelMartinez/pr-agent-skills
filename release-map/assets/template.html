@@ -189,7 +189,8 @@ const fmtDate = d => new Date(d+"T00:00:00Z").toLocaleDateString("en-GB",{day:"n
 const dayDiff = (a,b) => Math.round((Date.parse(b)-Date.parse(a))/864e5);
 const byPr = Object.fromEntries(ITEMS.map(i=>[i.pr,i]));
 
-const S = {types:new Set(), themes:new Set(), q:"", rel:"", head:true, day:"", sel:null};
+const HAS_HEADS = ITEMS.some(i=>i.note); // without editorial notes, show every change by default
+const S = {types:new Set(), themes:new Set(), q:"", rel:"", head:HAS_HEADS, day:"", sel:null};
 function matches(it, forMap){
   if (S.types.size && !S.types.has(it.type)) return false;
   if (S.themes.size && !S.themes.has(it.theme)) return false;
@@ -253,8 +254,8 @@ function renderFilters(){
   document.getElementById("f-q").oninput=e=>{S.q=e.target.value.trim();update();};
   document.getElementById("f-rel").onchange=e=>{S.rel=e.target.value;S.day="";update(true);};
   document.getElementById("f-head").onchange=e=>{S.head=e.target.checked;update();};
-  document.getElementById("f-reset").onclick=()=>{S.types.clear();S.themes.clear();S.q="";S.rel="";S.day="";S.head=true;
-    document.getElementById("f-q").value="";document.getElementById("f-rel").value="";document.getElementById("f-head").checked=true;update(true);};
+  document.getElementById("f-reset").onclick=()=>{S.types.clear();S.themes.clear();S.q="";S.rel="";S.day="";S.head=HAS_HEADS;
+    document.getElementById("f-q").value="";document.getElementById("f-rel").value="";document.getElementById("f-head").checked=HAS_HEADS;update(true);};
   document.getElementById("legend").innerHTML = GROUPS.map(([g,l])=>`<span><span class="sw" style="background:${tcol(g)}"></span>${l}</span>`).join("")+
     `<span><svg width="12" height="12" aria-hidden="true"><path d="M6 1 L11 6 L6 11 L1 6 Z" fill="var(--accent)"/></svg>headline</span><span><svg width="10" height="12" aria-hidden="true"><line x1="5" y1="0" x2="5" y2="12" stroke="var(--accent)" stroke-width="2"/></svg>release</span>`;
 }
@@ -363,6 +364,7 @@ function update(centre){
   if(centre && S.rel){ const r=RELS[relIdx[S.rel]], sc=document.getElementById("scroller");
     sc.scrollLeft = LEFT+((dayDiff(D0,r.from)+dayDiff(D0,r.to))/2)*DAYW - sc.clientWidth/2; }
 }
+document.getElementById("f-head").checked=HAS_HEADS;
 renderHeader(); renderUpgrade(); renderFilters(); renderFooter(); update();
 addEventListener("resize",()=>renderMap(MAPVIS));
 </script>
