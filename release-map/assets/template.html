@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Release Map</title>
+<style>
+/* Layout: one column; where-we-are and upgrade notes first, then the day chart, then the change list with its detail panel. */
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#18202b; --muted:#5b6676; --line:#dde2e9; --soft:#eef1f5; --weekend:#e7ebf1;
+  --accent:#2f5fd0; --accent-ink:#ffffff; --warn-bg:#fff5e6; --warn-line:#f0c27a;
+  --t-feat:#11845b; --t-fix:#c2570c; --t-perf:#7b4fd6; --t-refactor:#2f6f9f; --t-docs:#0e8aa3; --t-chore:#7a8494; --t-other:#9aa3b1;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141b; --panel:#161d27; --ink:#e4e9f0; --muted:#9aa6b6; --line:#2a3442; --soft:#1d2531; --weekend:#1f2836;
+  --accent:#7ea2ff; --accent-ink:#0f141b; --warn-bg:#2a2112; --warn-line:#7a5a22;
+  --t-feat:#3ccf91; --t-fix:#f59a4a; --t-perf:#b394ff; --t-refactor:#6fb2e3; --t-docs:#4fd0e6; --t-chore:#8e99a9; --t-other:#7d8796;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --panel:#161d27; --ink:#e4e9f0; --muted:#9aa6b6; --line:#2a3442; --soft:#1d2531; --weekend:#1f2836;
+  --accent:#7ea2ff; --accent-ink:#0f141b; --warn-bg:#2a2112; --warn-line:#7a5a22;
+  --t-feat:#3ccf91; --t-fix:#f59a4a; --t-perf:#b394ff; --t-refactor:#6fb2e3; --t-docs:#4fd0e6; --t-chore:#8e99a9; --t-other:#7d8796;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:24px}
+h1,h2,h3{text-wrap:balance;margin:0;line-height:1.2;font-weight:650}
+h1{font-size:1.9rem;letter-spacing:-.01em}
+h2{font-size:1.25rem}
+h3{font-size:1.02rem}
+a{color:var(--accent)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font:500 .75rem var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.lede{max-width:72ch;margin:.6rem 0 0;font-size:1.02rem}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--soft);padding:0 3px;border-radius:3px;overflow-wrap:anywhere}
+
+/* where we are */
+.now{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:18px}
+.card{padding:14px 16px;display:flex;flex-direction:column;gap:4px;cursor:pointer;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.card[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.card .k{font:500 .72rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.card .tag{font:650 1.35rem var(--f-mono)}
+.card .stats{color:var(--muted);font-size:.9rem}
+.card .stats b{color:var(--ink);font-family:var(--f-mono)}
+.older{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;font-size:.88rem;color:var(--muted)}
+.chip{border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:2px 10px;font-size:.82rem;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.chip .n{font-family:var(--f-mono);color:var(--muted);font-size:.75rem}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip[aria-pressed="true"] .n{color:var(--bg);opacity:.75}
+.sw{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+
+/* upgrade */
+.upgrade{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.ublock{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:10px 14px}
+.ublock h3{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ublock h3 a{font-size:.8rem;font-weight:400}
+.ublock ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:.9rem}
+.ublock p{margin:6px 0 0;font-size:.9rem}
+details>summary{cursor:pointer;color:var(--muted);font-size:.9rem}
+
+/* filters */
+.filters{padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.frow{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.flabel{font:500 .72rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);min-width:52px}
+.frow input[type=search]{flex:1 1 220px;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.frow select{padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.toggle{display:inline-flex;gap:6px;align-items:center;font-size:.88rem;cursor:pointer}
+.shown{font-family:var(--f-mono);font-size:.85rem;color:var(--muted);margin-left:auto}
+.reset{font-size:.85rem;background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;padding:0}
+#more .frow{margin-top:8px}
+
+/* chart */
+.mapbox{padding:12px 0 6px}
+.maphead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;padding:0 16px 8px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:.78rem;color:var(--muted)}
+.legend span{display:inline-flex;gap:5px;align-items:center}
+.scroller{overflow-x:auto;-webkit-overflow-scrolling:touch}
+svg text{font-family:var(--f-mono);fill:var(--muted)}
+.bar,.dia,.span{cursor:pointer}
+#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);padding:6px 9px;border-radius:6px;font-size:.8rem;max-width:300px;z-index:20;line-height:1.35}
+
+/* list + detail */
+.ld{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:16px;align-items:start}
+.list{padding:6px 0;min-width:0}
+.rel-h{padding:14px 16px 4px;display:flex;gap:10px;align-items:baseline}
+.day-h{padding:8px 16px 2px;font:500 .78rem var(--f-mono);color:var(--muted);letter-spacing:.03em}
+.row{display:grid;grid-template-columns:10px 62px minmax(0,1fr);gap:10px;align-items:baseline;padding:5px 16px;cursor:pointer;border:none;background:none;width:100%;text-align:left}
+.row:hover{background:var(--soft)}
+.row.sel{background:var(--soft);box-shadow:3px 0 0 var(--accent) inset}
+.row .pr{font:400 .8rem var(--f-mono);color:var(--muted)}
+.row .t{min-width:0;overflow-wrap:anywhere}
+.row .meta{color:var(--muted);font-size:.8rem}
+.row .star{color:var(--accent);font-size:.75rem;margin-right:4px}
+.empty{padding:24px 16px;color:var(--muted)}
+.detail{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.detail .pills{display:flex;gap:6px;flex-wrap:wrap}
+.pill{font:500 .75rem var(--f-mono);border-radius:5px;padding:1px 7px;border:1px solid currentColor}
+.detail .hl{font-size:1.12rem;font-weight:650;line-height:1.3}
+.detail .ti{font-family:var(--f-mono);font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
+.detail dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:.88rem}
+.detail dt{color:var(--muted)}
+.detail dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.nav{display:flex;gap:8px;justify-content:space-between;margin-top:4px}
+.nav button,.nav a{border:1px solid var(--line);background:var(--soft);border-radius:7px;padding:4px 12px;cursor:pointer;font-size:.85rem;text-decoration:none;color:var(--ink)}
+.nav button:disabled{opacity:.4;cursor:default}
+footer{color:var(--muted);font-size:.85rem;display:flex;flex-direction:column;gap:6px}
+footer p{margin:0;max-width:90ch}
+footer a{overflow-wrap:anywhere}
+
+@media (max-width:900px){
+  .ld{grid-template-columns:minmax(0,1fr)}
+  .detail{position:static;order:-1}
+  .detail.is-empty{display:none}
+}
+@media (max-width:480px){
+  h1{font-size:1.5rem}
+  .row{grid-template-columns:8px 52px minmax(0,1fr);gap:8px}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow" id="crumbs"></div>
+    <h1 id="title">Release map</h1>
+    <p class="lede" id="lede"></p>
+    <div class="now" id="now"></div>
+    <div class="older" id="older"></div>
+  </header>
+
+  <section class="panel upgrade" id="upgrade" aria-label="Before you upgrade">
+    <h2>Before you upgrade</h2>
+    <div id="ublocks" style="display:flex;flex-direction:column;gap:12px"></div>
+  </section>
+
+  <section class="panel mapbox" aria-label="Changes by day">
+    <div class="maphead"><h2>Changes by day</h2><div class="legend" id="legend"></div></div>
+    <div class="scroller" id="scroller"><svg id="map" role="img" aria-label="Merged changes per day, with headline changes marked"></svg></div>
+  </section>
+
+  <section class="panel filters" aria-label="Filters">
+    <div class="frow">
+      <input type="search" id="f-q" placeholder="Search all changes: title, scope, author or #PR" aria-label="Search">
+      <select id="f-rel" aria-label="Release"></select>
+      <label class="toggle"><input type="checkbox" id="f-head" checked> Headlines only</label>
+      <span id="f-day"></span>
+      <button class="reset" id="f-reset" type="button">Reset</button>
+      <span class="shown" id="shown"></span>
+    </div>
+    <details id="more"><summary>Filter by type or theme</summary>
+      <div class="frow"><span class="flabel">Type</span><div class="frow" id="f-type"></div></div>
+      <div class="frow" id="theme-row"><span class="flabel">Theme</span><div class="frow" id="f-theme"></div></div>
+    </details>
+  </section>
+
+  <section class="ld">
+    <div class="panel list" id="list" aria-label="Changes"></div>
+    <aside class="panel detail" id="detail" aria-live="polite"></aside>
+  </section>
+
+  <footer id="foot"></footer>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const ITEMS = /*ITEMS*/[];
+const META = /*META*/{};
+const THEMES = META.themes || {}, TYPES = ["feat","fix","perf","refactor","docs","chore"];
+const TYPE_NAME = {feat:"Feature",fix:"Fix",perf:"Performance",refactor:"Refactor",docs:"Docs",chore:"Chore"};
+const GROUPS = [["fix","Fixes"],["feat","Features"],["other","Everything else"]];
+const grp = t => t==="feat"||t==="fix" ? t : "other";
+const RELS = META.releases; // newest first
+const relIdx = Object.fromEntries(RELS.map((r,i)=>[r.tag,i]));
+const relName = r => r.unreleased ? "Unreleased" : r.tag;
+const tcol = t => `var(--t-${t})`;
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const GH = `https://github.com/${META.repo}`;
+const rich = s => esc(s).replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/`([^`]+)`/g,"<code>$1</code>")
+  .replace(/(^|[^&\w])#(\d{2,6})\b/g,`$1<a href="${GH}/pull/$2" target="_blank" rel="noopener">#$2</a>`);
+const prUrl = it => it.missing ? `${GH}/commit/${it.sha}` : `${GH}/pull/${it.pr}`;
+const fmtDay = d => new Date(d+"T00:00:00Z").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",timeZone:"UTC"});
+const fmtDate = d => new Date(d+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"});
+const dayDiff = (a,b) => Math.round((Date.parse(b)-Date.parse(a))/864e5);
+const byPr = Object.fromEntries(ITEMS.map(i=>[i.pr,i]));
+
+const S = {types:new Set(), themes:new Set(), q:"", rel:"", head:true, day:"", sel:null};
+function matches(it, forMap){
+  if (S.types.size && !S.types.has(it.type)) return false;
+  if (S.themes.size && !S.themes.has(it.theme)) return false;
+  if (S.q){
+    const q=S.q.toLowerCase().replace(/^#/,"");
+    const hay=(it.title+" "+(it.scope||"")+" "+it.author+" "+it.pr+" "+(it.note?it.note.h:"")).toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  if (forMap) return true;
+  if (S.rel && it.rel!==S.rel) return false;
+  if (S.day && it.date!==S.day) return false;
+  if (S.head && !S.q && !it.note) return false; // search always reaches every change
+  return true;
+}
+const ORDER = ITEMS.slice().sort((a,b)=>relIdx[a.rel]-relIdx[b.rel] || b.date.localeCompare(a.date) || (b.note?1:0)-(a.note?1:0) || b.pr-a.pr);
+let VIS=[], MAPVIS=[];
+const setRel = tag => { S.rel = S.rel===tag ? "" : tag; S.day=""; document.getElementById("f-rel").value=S.rel; update(true); };
+
+/* ---------- where we are ---------- */
+function stats(tag){
+  const xs=ITEMS.filter(i=>i.rel===tag);
+  return {n:xs.length, heads:xs.filter(i=>i.note).length, feats:xs.filter(i=>i.type==="feat").length, people:new Set(xs.map(i=>i.author)).size};
+}
+function renderHeader(){
+  const name = META.repo.split("/")[1];
+  document.title = `${name} release map`;
+  document.getElementById("title").textContent = `${name} release map`;
+  const latest = RELS.find(r=>!r.unreleased), pending = RELS.find(r=>r.unreleased);
+  document.getElementById("crumbs").innerHTML = `<a href="${GH}" target="_blank" rel="noopener">${esc(META.repo)}</a> · latest ${esc(latest.tag)} · checked ${fmtDate(META.checked)}`;
+  document.getElementById("lede").innerHTML = rich(META.lede);
+  const card = (r,k,when) => { const s=stats(r.tag); return `<button class="card" type="button" data-rel="${esc(r.tag)}" aria-pressed="false">
+      <span class="k">${k}</span><span class="tag">${esc(relName(r))}</span><span class="stats">${when}</span>
+      <span class="stats"><b>${s.n}</b> changes · <b>${s.heads}</b> headlines · <b>${s.feats}</b> features · <b>${s.people}</b> people</span>
+      <span class="stats">${r.upgrade.length?`<b>${r.upgrade.length}</b> upgrade note${r.upgrade.length>1?"s":""}`:"No upgrade notes"}</span></button>`; };
+  document.getElementById("now").innerHTML = card(latest,"Latest release",`Shipped ${fmtDate(latest.to)}`) +
+    (pending ? card(pending,"Pending on "+esc(pending.head||"main"),`${dayDiff(pending.from,pending.to)} days since ${esc(pending.prev)}, as of ${fmtDate(pending.to)}`) : "");
+  const older = RELS.filter(r=>!r.unreleased && r!==latest);
+  document.getElementById("older").innerHTML = older.length ? `Earlier: ` + older.map(r=>`<button class="chip" type="button" data-rel="${esc(r.tag)}" aria-pressed="false">${esc(r.tag)}<span class="n">${stats(r.tag).n}</span></button>`).join("") : "";
+  document.querySelectorAll("[data-rel]").forEach(b=>b.onclick=()=>setRel(b.dataset.rel));
+}
+function renderUpgrade(){
+  const latest = RELS.find(r=>!r.unreleased);
+  const block = r => `<div class="ublock"><h3><span class="mono">${esc(relName(r))}</span>${r.unreleased?"":`<a href="${GH}/releases/tag/${encodeURIComponent(r.tag)}" target="_blank" rel="noopener">release notes ↗</a>`}<span class="eyebrow">${r.upgradeSource==="editorial"?"from PR descriptions":"from release notes"}</span></h3>
+    ${r.upgrade.length?`<ul>${r.upgrade.map(u=>`<li>${rich(u)}</li>`).join("")}</ul>`:`<p>No breaking changes, changed defaults or settings moves are listed${r.unreleased?" in the merged pull requests":""}.</p>`}</div>`;
+  const top = RELS.filter(r=>r.unreleased||r===latest), rest = RELS.filter(r=>!top.includes(r));
+  document.getElementById("ublocks").innerHTML = top.map(block).join("") +
+    (rest.length?`<details><summary>Earlier releases: ${rest.map(r=>esc(r.tag)).join(", ")}</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">${rest.map(block).join("")}</div></details>`:"");
+}
+
+/* ---------- filters ---------- */
+const toggle=(set,v)=>set.has(v)?set.delete(v):set.add(v);
+function renderFilters(){
+  const tc={}; ITEMS.forEach(i=>tc[i.type]=(tc[i.type]||0)+1);
+  document.getElementById("f-type").innerHTML = TYPES.map(t=>`<button class="chip" type="button" data-type="${t}" aria-pressed="false"><span class="sw" style="background:${tcol(t)}"></span>${TYPE_NAME[t]}<span class="n">${tc[t]||0}</span></button>`).join("");
+  const hc={}; ITEMS.forEach(i=>hc[i.theme]=(hc[i.theme]||0)+1);
+  document.getElementById("theme-row").hidden = !Object.keys(THEMES).length;
+  document.getElementById("f-theme").innerHTML = Object.keys(THEMES).map(k=>`<button class="chip" type="button" data-theme-key="${esc(k)}" aria-pressed="false">${esc(THEMES[k])}<span class="n">${hc[k]||0}</span></button>`).join("");
+  document.getElementById("f-rel").innerHTML = `<option value="">All releases</option>`+RELS.map(r=>`<option value="${esc(r.tag)}">${esc(relName(r))}</option>`).join("");
+  document.querySelectorAll("[data-type]").forEach(b=>b.onclick=()=>{toggle(S.types,b.dataset.type);update();});
+  document.querySelectorAll("[data-theme-key]").forEach(b=>b.onclick=()=>{toggle(S.themes,b.dataset.themeKey);update();});
+  document.getElementById("f-q").oninput=e=>{S.q=e.target.value.trim();update();};
+  document.getElementById("f-rel").onchange=e=>{S.rel=e.target.value;S.day="";update(true);};
+  document.getElementById("f-head").onchange=e=>{S.head=e.target.checked;update();};
+  document.getElementById("f-reset").onclick=()=>{S.types.clear();S.themes.clear();S.q="";S.rel="";S.day="";S.head=true;
+    document.getElementById("f-q").value="";document.getElementById("f-rel").value="";document.getElementById("f-head").checked=true;update(true);};
+  document.getElementById("legend").innerHTML = GROUPS.map(([g,l])=>`<span><span class="sw" style="background:${tcol(g)}"></span>${l}</span>`).join("")+
+    `<span><svg width="12" height="12" aria-hidden="true"><path d="M6 1 L11 6 L6 11 L1 6 Z" fill="var(--accent)"/></svg>headline</span><span><svg width="10" height="12" aria-hidden="true"><line x1="5" y1="0" x2="5" y2="12" stroke="var(--accent)" stroke-width="2"/></svg>release</span>`;
+}
+
+/* ---------- chart: one bar per day, headlines as diamonds above ---------- */
+const allDates = ITEMS.map(i=>i.date).sort();
+const D0 = allDates[0], D1 = META.checked > allDates.at(-1) ? META.checked : allDates.at(-1);
+const NDAYS = dayDiff(D0,D1)+1;
+const perDay={}, headDay={}; ITEMS.forEach(i=>{perDay[i.date]=(perDay[i.date]||0)+1; if(i.note) headDay[i.date]=(headDay[i.date]||0)+1;});
+const MAXDAY = Math.max(...Object.values(perDay)), MAXHEAD = Math.max(0,...Object.values(headDay));
+const BARMAX=84, DSTEP=9, TOP=42, TRACK=BARMAX+MAXHEAD*DSTEP+14, LEFT=12;
+let firstPaint = true, DAYW = 22;
+function renderMap(vis){
+  DAYW = Math.max(13, Math.min(34, Math.floor((document.getElementById("scroller").clientWidth-LEFT-12)/NDAYS)));
+  const BW = DAYW-4, dx = d => LEFT+dayDiff(D0,d)*DAYW;
+  const W=LEFT+NDAYS*DAYW+12, H=TOP+TRACK+6, base=TOP+TRACK, k=BARMAX/MAXDAY, svg=document.getElementById("map");
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("width",W); svg.setAttribute("height",H);
+  let s="";
+  for(let d=0; d<NDAYS; d++){
+    const dt=new Date(Date.parse(D0+"T00:00:00Z")+d*864e5), wd=dt.getUTCDay(), x=LEFT+d*DAYW;
+    if(wd===0||wd===6) s+=`<rect x="${x}" y="${TOP}" width="${DAYW}" height="${TRACK}" fill="var(--weekend)"/>`;
+    if(d===0||wd===1) s+=`<text x="${x+1}" y="${TOP-6}" font-size="9.5">${dt.toLocaleDateString("en-GB",{day:"numeric",month:"short",timeZone:"UTC"})}</text>`;
+  }
+  s+=`<line x1="${LEFT}" y1="${base}" x2="${W-6}" y2="${base}" stroke="var(--line)"/>`;
+  RELS.slice().reverse().forEach(r=>{
+    const x0=Math.max(LEFT,dx(r.from)), x1=dx(r.to)+DAYW, sel=S.rel===r.tag;
+    s+=`<g class="span" data-rel="${esc(r.tag)}"><rect x="${x0+1}" y="4" width="${Math.max(0,x1-x0-2)}" height="17" rx="3" fill="${sel?"var(--accent)":"var(--soft)"}"/>`+
+       `<text x="${(x0+x1)/2}" y="16.5" font-size="10.5" text-anchor="middle" style="fill:${sel?"var(--accent-ink)":"var(--ink)"}">${esc(relName(r))}</text></g>`;
+    if(!r.unreleased) s+=`<line x1="${x1}" y1="${TOP-2}" x2="${x1}" y2="${base}" stroke="var(--accent)" stroke-width="1.6"/>`;
+  });
+  const days={}; vis.forEach(it=>{(days[it.date]=days[it.date]||[]).push(it);});
+  Object.entries(days).forEach(([date,xs])=>{
+    const on = !S.rel || xs.some(i=>i.rel===S.rel), op = on ? 1 : .28, x=dx(date)+2;
+    let y=base;
+    GROUPS.forEach(([g])=>{const n=xs.filter(i=>grp(i.type)===g).length; if(!n) return; const h=n*k; y-=h;
+      s+=`<rect class="bar" data-day="${date}" x="${x}" y="${y}" width="${BW}" height="${h}" fill="${tcol(g)}" opacity="${op}"/>`;});
+    if(S.day===date) s+=`<rect x="${x-1.5}" y="${y-1.5}" width="${BW+3}" height="${base-y+1.5}" fill="none" stroke="var(--ink)" stroke-width="1.5" pointer-events="none"/>`;
+    xs.filter(i=>i.note).sort((a,b)=>a.pr-b.pr).forEach((it,j)=>{
+      const cx=x+BW/2, cy=y-7-j*DSTEP, r=S.sel===it.pr?5.5:4.2, off=S.rel&&it.rel!==S.rel;
+      s+=`<path class="dia" data-pr="${it.pr}" d="M${cx} ${cy-r} L${cx+r} ${cy} L${cx} ${cy+r} L${cx-r} ${cy} Z" fill="${off?"var(--muted)":"var(--accent)"}" opacity="${off?.35:1}"${S.sel===it.pr?` stroke="var(--ink)" stroke-width="1.5"`:""}/>`;
+    });
+  });
+  svg.innerHTML=s;
+  const sc=document.getElementById("scroller");
+  if(firstPaint){ sc.scrollLeft=sc.scrollWidth; firstPaint=false; }
+}
+const tip=document.getElementById("tip"), svgEl=document.getElementById("map");
+svgEl.addEventListener("mousemove",e=>{
+  const d=e.target.closest(".dia"), b=e.target.closest(".bar");
+  if(d){const it=byPr[d.dataset.pr]; tip.innerHTML=`${esc(it.note.h)}<br><span class="mono">#${it.pr} · ${esc(it.author)}</span>`;}
+  else if(b){const xs=MAPVIS.filter(i=>i.date===b.dataset.day); tip.innerHTML=`${fmtDay(b.dataset.day)}: ${xs.length} change${xs.length>1?"s":""}<br><span class="mono">${GROUPS.map(([g,l])=>`${xs.filter(i=>grp(i.type)===g).length} ${l.toLowerCase()}`).join(" · ")}</span>`;}
+  else {tip.hidden=true;return;}
+  tip.hidden=false; tip.style.left=Math.min(e.clientX+12, innerWidth-310)+"px"; tip.style.top=(e.clientY+14)+"px";});
+svgEl.addEventListener("mouseleave",()=>tip.hidden=true);
+svgEl.addEventListener("click",e=>{
+  const d=e.target.closest(".dia"); if(d) return select(+d.dataset.pr,true);
+  const b=e.target.closest(".bar"); if(b){ S.day = S.day===b.dataset.day ? "" : b.dataset.day; return update(); }
+  const g=e.target.closest(".span"); if(g) setRel(g.dataset.rel);});
+
+/* ---------- list + detail ---------- */
+function renderList(){
+  const el=document.getElementById("list");
+  if(!VIS.length){el.innerHTML=`<p class="empty">No changes match. ${S.head&&!S.q?"Untick Headlines only to see every change, or ":""}use Reset to clear the filters.</p>`;return;}
+  let h="", lastRel=null, lastDay=null;
+  VIS.forEach(it=>{
+    if(it.rel!==lastRel){h+=`<div class="rel-h"><h3 class="mono">${esc(relName(RELS[relIdx[it.rel]]))}</h3><span class="eyebrow">${VIS.filter(i=>i.rel===it.rel).length} shown</span></div>`; lastRel=it.rel; lastDay=null;}
+    if(it.date!==lastDay){h+=`<div class="day-h">${fmtDay(it.date)}</div>`; lastDay=it.date;}
+    h+=`<button class="row${S.sel===it.pr?" sel":""}" type="button" data-pr="${it.pr}"><span class="sw" style="background:${tcol(it.type)}"></span><span class="pr">#${it.pr}</span><span class="t">${it.note?`<span class="star">◆</span><strong>${esc(it.note.h)}</strong>`:`${esc(it.title)} <span class="meta">· ${esc(it.author)}</span>`}</span></button>`;
+  });
+  el.innerHTML=h;
+  el.querySelectorAll(".row").forEach(b=>b.onclick=()=>select(+b.dataset.pr,false));
+}
+function renderDetail(){
+  const el=document.getElementById("detail"), it=byPr[S.sel], i=VIS.findIndex(x=>x.pr===S.sel);
+  el.classList.toggle("is-empty",!it);
+  if(!it){el.innerHTML=`<span class="eyebrow">Detail</span><p style="margin:0;color:var(--muted)">Pick a change in the list or a diamond in the chart. Headline changes carry a plain-English summary and how to switch them on.</p>`;return;}
+  const r=RELS[relIdx[it.rel]];
+  el.innerHTML=`<div class="pills"><span class="pill" style="color:${tcol(it.type)}">${TYPE_NAME[it.type]}${it.scope?` · ${esc(it.scope)}`:""}</span>${it.theme&&THEMES[it.theme]?`<span class="pill" style="color:var(--muted)">${esc(THEMES[it.theme])}</span>`:""}<span class="pill" style="color:var(--muted)">${esc(relName(r))}</span></div>
+    ${it.note?`<div class="hl">${esc(it.note.h)}</div>`:""}
+    <div class="ti">${esc(it.title)}</div>
+    ${it.note&&it.note.why?`<p style="margin:0">${rich(it.note.why)}</p>`:""}
+    <dl>${it.note&&it.note.cfg?`<dt>Switch</dt><dd>${rich(it.note.cfg)}</dd>`:""}<dt>Author</dt><dd>${esc(it.author)}</dd><dt>Merged</dt><dd>${fmtDate(it.date)} (UTC)</dd>${it.flag?`<dt>Note</dt><dd>${esc(it.flag)}</dd>`:""}</dl>
+    <div class="nav"><button type="button" id="d-prev" ${i<=0?"disabled":""}>← Prev</button><a href="${prUrl(it)}" target="_blank" rel="noopener">${it.missing?"Commit":"#"+it.pr} ↗</a><button type="button" id="d-next" ${i<0||i>=VIS.length-1?"disabled":""}>Next →</button></div>`;
+  document.getElementById("d-prev").onclick=()=>select(VIS[i-1].pr,true);
+  document.getElementById("d-next").onclick=()=>select(VIS[i+1].pr,true);
+}
+function select(pr,scroll){
+  S.sel=pr; renderMap(MAPVIS); renderList(); renderDetail();
+  if(scroll){const row=document.querySelector(`.row[data-pr="${pr}"]`); row&&row.scrollIntoView({block:"nearest"});}
+  if(matchMedia("(max-width:900px)").matches) document.getElementById("detail").scrollIntoView({block:"nearest"});
+}
+function renderFooter(){
+  const cmp = RELS.map(r=>`<a href="${GH}/compare/${encodeURIComponent(r.prev)}...${encodeURIComponent(r.unreleased?(r.head||"main"):r.tag)}" target="_blank" rel="noopener">${esc(r.prev)}...${esc(r.unreleased?(r.head||"main"):r.tag)}</a>`).join(", ");
+  document.getElementById("foot").innerHTML=`<p><strong>Sources.</strong> ${cmp}; release notes; pull request titles, labels, authors, merge dates and descriptions from the GitHub API, read ${fmtDate(META.checked)}.</p><p>${esc(META.method)}</p>`;
+}
+function update(centre){
+  VIS=ORDER.filter(it=>matches(it)); MAPVIS=ORDER.filter(it=>matches(it,true));
+  if(S.sel && !VIS.some(i=>i.pr===S.sel)) S.sel=null;
+  document.getElementById("shown").textContent=`${VIS.length} of ${ITEMS.length} shown`;
+  document.getElementById("f-day").innerHTML = S.day ? `<button class="chip" type="button" aria-pressed="true" id="f-day-x">${fmtDay(S.day)} ✕</button>` : "";
+  if(S.day) document.getElementById("f-day-x").onclick=()=>{S.day="";update();};
+  document.querySelectorAll("[data-type]").forEach(b=>b.setAttribute("aria-pressed",S.types.has(b.dataset.type)));
+  document.querySelectorAll("[data-theme-key]").forEach(b=>b.setAttribute("aria-pressed",S.themes.has(b.dataset.themeKey)));
+  document.querySelectorAll("button[data-rel]").forEach(c=>c.setAttribute("aria-pressed",S.rel===c.dataset.rel));
+  renderMap(MAPVIS); renderList(); renderDetail();
+  if(centre && S.rel){ const r=RELS[relIdx[S.rel]], sc=document.getElementById("scroller");
+    sc.scrollLeft = LEFT+((dayDiff(D0,r.from)+dayDiff(D0,r.to))/2)*DAYW - sc.clientWidth/2; }
+}
+renderHeader(); renderUpgrade(); renderFilters(); renderFooter(); update();
+addEventListener("resize",()=>renderMap(MAPVIS));
+</script>
+</body>
+</html>
