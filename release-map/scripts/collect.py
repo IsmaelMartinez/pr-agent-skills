@@ -9,13 +9,14 @@ import argparse
 import datetime
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 PR_IN_TITLE = re.compile(r"\(#(\d+)\)\s*$")
-MERGE_COMMIT = re.compile(r"^Merge pull request #(\d+)\b")
+MERGE_COMMIT = re.compile(r"^Merge pull request #(\d+) from (\S+)")
 BUMP = re.compile(r"^chore\(release\):\s*bump version", re.IGNORECASE)
 PREFIX = re.compile(r"^(\w+)(?:\(([^)]*)\))?(!)?:\s*")
 TYPES = {"feat": "feat", "fix": "fix", "perf": "perf", "refactor": "refactor", "docs": "docs", "doc": "docs",
@@ -26,6 +27,8 @@ VERBS = {"add": "feat", "allow": "feat", "enable": "feat", "support": "feat", "f
 LABELS = [("feature", "feat"), ("enhancement", "feat"), ("bug", "fix"), ("performance", "perf"),
           ("documentation", "docs"), ("refactoring", "refactor"), ("dependencies", "chore"), ("chore", "chore")]
 UPGRADE_HEADING = re.compile(r"^#{2,3}\s.*(breaking|upgrade|important)", re.IGNORECASE)
+HEADING = re.compile(r"^#{1,6}\s")
+ITEM = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 
 
 def gh(*args, retries=3):
@@ -43,6 +46,8 @@ def releases(repo, count):
     rows = json.loads(gh("release", "list", "--repo", repo, "--limit", "1000", "--exclude-drafts",
                          "--exclude-pre-releases", "--json", "tagName,publishedAt"))
     rows.sort(key=lambda r: r["publishedAt"], reverse=True)
+    if count != "all" and not (count.isdigit() and int(count) >= 1):
+        sys.exit("--releases takes a number of at least 1, or all")
     count = len(rows) - 1 if count == "all" else int(count)
     if len(rows) < count + 1:
         sys.exit(f"need {count + 1} published releases to compare {count}; found {len(rows)}")
@@ -67,20 +72,31 @@ def compare(repo, base, head):
 def pr_metadata(repo, numbers):
     owner, name = repo.split("/")
     found = {}
-    for k in range(0, len(numbers), 40):
-        chunk = numbers[k:k + 40]
-        fields = "number title state mergedAt mergeCommit{oid} author{login} labels(first:30){nodes{name}} body"
+    batches = [numbers[k:k + 40] for k in range(0, len(numbers), 40)]
+    attempt = 0
+    while batches:
+        chunk = batches[0]
+        fields = ("number title state mergedAt mergeCommit{oid} headRefName headRepositoryOwner{login} author{login} "
+                  "labels(first:30){nodes{name}} body")
         query = "query{repository(owner:%s,name:%s){%s}}" % (json.dumps(owner), json.dumps(name), "".join(
             f"p{n}:pullRequest(number:{n}){{{fields}}}" for n in chunk))
         r = subprocess.run(["gh", "api", "graphql", "-f", f"query={query}"],
                            check=False, capture_output=True, text=True)
         try:
-            data = json.loads(r.stdout or "{}").get("data") or {}
+            repo_data = (json.loads(r.stdout or "{}").get("data") or {}).get("repository")
         except json.JSONDecodeError:
-            sys.exit(f"GraphQL batch failed: {r.stderr.strip()}")
-        for v in (data.get("repository") or {}).values():
-            if v:
+            repo_data = None
+        if repo_data is None:  # the whole batch failed (rate limit, auth, 5xx): never read that as missing PRs
+            if attempt < 3:
+                attempt += 1
+                time.sleep(2 ** attempt * 5)
+                continue
+            sys.exit(f"GraphQL batch for PRs {chunk[0]}..{chunk[-1]} failed: {(r.stderr or r.stdout).strip()[:300]}")
+        for v in repo_data.values():
+            if v:  # a null entry is a PR number GitHub no longer has
                 found[v["number"]] = v
+        batches.pop(0)
+        attempt = 0
     return found
 
 
@@ -89,11 +105,11 @@ def upgrade_notes(repo, tag):
     body = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "body"))["body"] or ""
     lines, inside = [], False
     for ln in body.splitlines():
-        if ln.startswith("#"):
+        if HEADING.match(ln):
             inside = bool(UPGRADE_HEADING.match(ln))
             continue
-        if inside and re.match(r"^\s*[-*]\s+", ln):
-            text = re.sub(r"\[#(\d+)\]\([^)]*\)", r"#\1", re.sub(r"^\s*[-*]\s+", "", ln))
+        if inside and ITEM.match(ln):
+            text = re.sub(r"\[#(\d+)\]\([^)]*\)", r"#\1", ITEM.sub("", ln, count=1))
             text = re.sub(r"https://github\.com/[^\s)]+/pull/(\d+)", r"#\1", text)
             lines.append(text.strip())
     return lines
@@ -122,7 +138,8 @@ def main():
     a = ap.parse_args()
     repo = a.repo or json.loads(gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
     work = Path(a.workdir)
-    (work / "bodies").mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(work / "bodies", ignore_errors=True)  # never mix descriptions from an earlier run
+    (work / "bodies").mkdir(parents=True)
     today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
     rels = releases(repo, a.releases)
@@ -144,25 +161,33 @@ def main():
                 continue
             candidates.append({"pr": int(m.group(1)), "rel": r["tag"], "sha": c["sha"], "commit_date": c["date"][:10],
                                "commit_author": c["author"], "title_line": c["title"],
+                               "merge_from": m.group(2) if m.re is MERGE_COMMIT else None,
                                "commit_title": PR_IN_TITLE.sub("", c["title"]).strip()})
     if not candidates:
         sys.exit("no pull requests found in the compared ranges")
 
-    # A PR number in a commit title is trusted when GitHub names that commit as the PR's merge commit, or when the
-    # PR merged inside the release window. Otherwise it is a number from other history (a merged fork's own PRs,
-    # a cherry-pick): the first plausible commit is kept and the rest are reported.
+    # A PR number in a commit title is trusted when GitHub names that commit as the PR's merge commit; when a
+    # "Merge pull request #N from owner/branch" commit names the PR's own head branch; or, for a "(#N)" title,
+    # when the PR merged before the release shipped. Anything else is a number from other history (a merged
+    # fork's own PRs): it is reported, not listed. Of several plausible commits for one PR the first is kept.
     meta = pr_metadata(repo, sorted({c["pr"] for c in candidates}))
-    window = {r["tag"]: (shift(r["from"], -14), shift(r["to"], 1)) for r in rels}
+    shipped = {r["tag"]: shift(r["to"], 1) for r in rels}
     items, repeats, chosen = [], [], {}
     for c in candidates:
         p = meta.get(c["pr"])
         merged = (p or {}).get("mergedAt")
-        lo, hi = window[c["rel"]]
         exact = bool(p and (p.get("mergeCommit") or {}).get("oid") == c["sha"])
-        plausible = exact or not merged or lo <= merged[:10] <= hi
+        if exact or not merged:
+            plausible = True
+        elif c["merge_from"]:
+            head_owner = (p.get("headRepositoryOwner") or {}).get("login")
+            plausible = c["merge_from"] in (f"{head_owner}/{p['headRefName']}", p["headRefName"]) or (
+                not head_owner and c["merge_from"].endswith("/" + p["headRefName"]))
+        else:
+            plausible = merged[:10] <= shipped[c["rel"]]
         if not plausible:
             unmapped.append({"sha": c["sha"], "title": c["title_line"], "rel": c["rel"],
-                             "reason": f"#{c['pr']} merged {merged[:10]}, outside this release"})
+                             "reason": f"#{c['pr']} is a different pull request (merged {merged[:10]})"})
         elif c["pr"] in chosen and not (exact and not chosen[c["pr"]]["exact"]):
             repeats.append({"sha": c["sha"], "title": c["title_line"], "rel": c["rel"],
                             "first": chosen[c["pr"]]["rel"]})
@@ -176,6 +201,7 @@ def main():
             items.append(c)
     for i in items:
         i.pop("title_line")
+        i.pop("merge_from")
 
     for i in items:
         p = meta.get(i["pr"])

@@ -14,6 +14,12 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "template.html"
 CITE = re.compile(r"#(\d+)")
 CODE = re.compile(r"`([^`]+)`")
 DOTTED = re.compile(r"\b[a-z][a-z0-9_]*(?:\.[a-z0-9_*]+)+\b")
+
+
+def looks_like_key(tok):
+    """A dotted token worth checking: every segment is a word, not prose such as e.g or a version like v0.51."""
+    parts = tok.split(".")
+    return all(len(p) > 1 and not p.isdigit() and not p[0].isdigit() for p in parts) and not re.match(r"v\d", tok)
 TYPES = {"feat", "fix", "perf", "refactor", "docs", "chore"}
 
 
@@ -24,7 +30,13 @@ def squash(s):
 def merge_editorial(files):
     ed = {"themes": {}, "items": {}, "upgrade": {}, "lede": None}
     for f in files:
-        d = json.loads(Path(f).read_text())
+        try:
+            d = json.loads(Path(f).read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            sys.exit(f"{f}: cannot read editorial JSON ({e})")
+        if not isinstance(d, dict) or not all(isinstance(it, dict) and isinstance(it.get("pr"), int)
+                                               for it in d.get("items") or []):
+            sys.exit(f"{f}: expected an object whose items each have an integer pr")
         ed["themes"].update(d.get("themes") or {})
         ed["upgrade"].update(d.get("upgrade") or {})
         ed["lede"] = d.get("lede") or ed["lede"]
@@ -89,7 +101,7 @@ def main():
             if e.get("h"):
                 warnings.append(f"#{pr} has no PR body to check its note against")
             continue
-        for tok in set(CODE.findall(prose)) | set(DOTTED.findall(prose)):
+        for tok in set(CODE.findall(prose)) | {t for t in DOTTED.findall(prose) if looks_like_key(t)}:
             if squash(tok) not in body and not tok.startswith("pr-agent"):
                 errors.append(f"#{pr} note names {tok!r}, which is not in the PR title or description")
         if e.get("evidence") and squash(e["evidence"]) not in body:
@@ -103,8 +115,8 @@ def main():
             if "—" in ln and tag in ed["upgrade"]:
                 errors.append(f"{tag} upgrade line contains an em-dash: {ln[:60]}")
             cited = [int(n) for n in CITE.findall(ln)]
-            if not cited:
-                errors.append(f"{tag} upgrade line cites no PR: {ln[:80]}")
+            if not cited:  # editorial lines must cite a PR; a release's own notes are taken as published
+                (errors if tag in ed["upgrade"] else warnings).append(f"{tag} upgrade line cites no PR: {ln[:80]}")
             for n in cited:
                 if n not in items:
                     warnings.append(f"{tag} upgrade line cites #{n}, which is outside the compared ranges")

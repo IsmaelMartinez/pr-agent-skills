@@ -64,7 +64,7 @@ The work splits cleanly by release. If your agent can run independent workers, g
 
 ## What render.py checks
 
-It stops without writing the page when a PR appears twice or belongs to no release, an editorial entry names a PR outside the compared ranges, a theme is not in `themes`, a note names a config key (a backticked or dotted token) that is not in that PR's title or description, an `evidence` sentence is not in the description, an upgrade line cites no PR, or editorial text contains an em-dash. Commits without a PR number and PRs merged outside their release's dates are printed as warnings. Fix every error and run it again; do not edit the generated HTML.
+It stops without writing the page when a PR appears twice or belongs to no release, an editorial entry names a PR outside the compared ranges, a theme is not in `themes`, a note names a config key (a backticked or dotted token) that is not in that PR's title or description, an `evidence` sentence is not in the description, an upgrade line you wrote cites no PR, or editorial text contains an em-dash. Upgrade lines taken from release notes without a PR number only warn. Commits without a PR number and PRs merged outside their release's dates are printed as warnings. Fix every error and run it again; do not edit the generated HTML.
 
 The key check catches invented or misspelled keys, not inverted logic: read each `why` against its description once more before sharing.
 
