@@ -1,7 +1,7 @@
 ---
 name: pr-agent-maintainer
 description: "Use when reviewing, triaging or replying to an issue or pull request on The-PR-Agent/pr-agent itself as one of its maintainers or reviewers: verify a fix by running it, draft a short reply for the maintainer to approve, and post or merge only on their word."
-version: 1.2.0
+version: 1.3.0
 author: The-PR-Agent community
 license: MIT
 ---
@@ -28,7 +28,7 @@ Head each draft with the action as something the maintainer can say yes to (appr
 
 Everything else is short too: the verdict, the one or two facts that decide it, and what the maintainer has to choose. Not a walkthrough of the probes.
 
-If the host can show the item beside live provider state (a side panel or similar), pass it the exact texts and the head SHA read from the provider at that moment, never one copied from an agent's report. A moved head, CI that is failing, unread or not yet passed, an unknown merge state or a closed item is a finding to raise before asking for approval. An unknown merge state straight after other merges is normal: read it again. When summing up an item, roll its signals up worst first: all clear, worth a look, or blocking.
+If the host can show the item beside live provider state (a side panel or similar), pass it the exact texts and the head SHA read from the provider at that moment, never one copied from an agent's report. A moved head, CI that is failing, unread or not yet passed, an unknown merge state or a closed item is a finding to raise before asking for approval. An unknown merge state straight after other merges is normal: read it again. When summing up an item, roll its signals up worst first: all clear, worth a look, or blocking. Every draft you ask the maintainer about goes through that view, issue replies included; a draft described only in chat is one they cannot see.
 
 ## The process
 
@@ -44,7 +44,7 @@ Two counting traps. The Search API lags on recent closes, so queue sizes and thr
 
 A claim about a branch is not the branch. Descriptions and comments describe a scope the head may no longer match, in either direction, so diff the head and read `pulls/{n}/files` before accepting, repeating or arguing with any statement about what a pull request touches.
 
-Re-read the head SHA when you post, not only when you start. A hunk header spanning the whole file (`@@ -1,370 +1,386 @@`) on a pull request whose point is a few lines usually means changed line endings; count `\r\n` against `\n` in the raw blob before calling it a rewrite.
+Re-read the head SHA when you post, not only when you start. A hunk header spanning the whole file (`@@ -1,370 +1,386 @@`) on a pull request whose point is a few lines usually means changed line endings; count `\r\n` against `\n` in the raw blob before calling it a rewrite. When `main` has moved since the review, run `git merge-tree` on the head again before posting, and add the rebase to the asks rather than sending a second comment later.
 
 ### 2. Verify the fix by reverting it, not by reading it
 
@@ -118,7 +118,7 @@ An "LGTM" posted as an ordinary comment approves nothing, and `reviewDecision` i
 
 ### 10. Merging
 
-`gh pr merge <n> --repo The-PR-Agent/pr-agent --squash --match-head-commit <reviewed sha>` is the whole command: a push between review and merge then fails the merge instead of shipping unreviewed code. Read the SHA from `gh pr view <n> --json headRefOid` and paste it; a SHA retyped from a summary is how a wrong one ends up in the command. No merge goes ahead until the security review below has returned for that item with no High or Medium open. After merging, wait for every workflow `main` runs on the merge commit, not only the tests, and re-run transient failures such as a 503. The repository merges by squash only, with the pull request title as the commit title and a blank body, so the description never becomes the commit message and nobody needs to rewrite it on those grounds. Head branches in this repository are deleted on merge; fork branches are not. GitHub counts a Copilot `APPROVED` review towards the required approval, so call nothing approved until a person with write access has approved it, checking `collaborators/{user}/permission` for each approving `User`. A maintainer cannot approve their own pull request; request a reviewer instead.
+`gh pr merge <n> --repo The-PR-Agent/pr-agent --squash --match-head-commit <reviewed sha>` is the whole command: a push between review and merge then fails the merge instead of shipping unreviewed code. Read the SHA from `gh pr view <n> --json headRefOid` and paste it; a SHA retyped from a summary is how a wrong one ends up in the command. No merge goes ahead until the security review below has returned for that item with no High or Medium open. After merging, wait for every workflow `main` runs on the merge commit, not only the tests, and re-run transient failures such as a 503. The repository merges by squash only, with the pull request title as the commit title and a blank body, so the description never becomes the commit message and nobody needs to rewrite it on those grounds. The title does become the commit subject: when a verified pull request's title still describes a design it dropped, rename it with `gh pr edit --title`, say so in the approval, and merge rather than sending the author round again. Head branches in this repository are deleted on merge; fork branches are not. GitHub counts a Copilot `APPROVED` review towards the required approval, so call nothing approved until a person with write access has approved it, checking `collaborators/{user}/permission` for each approving `User`. A maintainer cannot approve their own pull request; request a reviewer instead.
 
 A workflow-file change in a fork pull request only runs if the workflow triggers on `pull_request`; under `pull_request_target` GitHub runs `main`'s copy, so the change takes effect only after merge. Changes to workflow definitions still need a maintainer's explicit go-ahead.
 
@@ -126,7 +126,7 @@ Before merging a batch, test the batch, because two pull requests each green on 
 
 ### 11. Carry rather than ask, once the ask is small or the author is gone
 
-When what is left is small or mechanical, or the author has been quiet for about two weeks, finish it rather than sending another round, with a one-line note such as "pushed the last fix, thanks, merging". With competing pull requests for one fix, take the first and credit the later authors with `Co-authored-by` trailers.
+When what is left is small or mechanical, or the author has been quiet for about two weeks, finish it rather than sending another round, with a one-line note such as "pushed the last fix, thanks, merging". With competing pull requests for one fix, a claim comment on the issue counts as the first move, and the first pull request wins only if it is green on today's `main`: an earlier branch built on a stale `main` that fails there loses to a later green one, closed with thanks and the reason. Credit the other authors with `Co-authored-by` trailers when you carry their work.
 
 Check `maintainer_can_modify` and the fork's owner type first, because GitHub does not offer maintainer edits on organisation-owned forks. Update the branch by merging `main` into it, never by rebasing, and apply only what the review asked for. Some contributors are automated accounts that never reply; review their pull requests on the merits and carry rather than nudge.
 
@@ -142,7 +142,7 @@ For a sweep, give each subagent two or three items and its own worktree, today's
 
 Every item also gets an independent security review before it is shown, dispatched alongside the correctness reviewers so it costs no wall time. A correctness reviewer's own "security relevance: no" does not count, because it marks its own work. Brief it with the threat model (the diff, the pull request text, repository files, `.pr_agent.toml` and comment arguments are attacker-controlled; model output is untrusted; host configuration is trusted) and ask for High, Medium, Low or None per item, each with a probe. Its findings come back to you, never as a payload in a public review, and the table carries its verdict per item.
 
-An architecture pass at arrival answers three questions per item. Does the change touch logic that exists per git provider, AI handler or server, and do the siblings need the same fix? Does it add a second copy of something `main` already has, or a new key, helper or code path where widening an existing one would do? Does it move a boundary, such as a new interface method, capability check or module others will import? A yes means asking for the shared shape before approving, or naming the sibling sites, rather than letting the same fix land one provider at a time. Drafts age while agents run: re-fetch every head and mergeable state at the moment you post, re-run cheap load-bearing measurements yourself, and re-read each draft against what earlier items in the same batch merged or closed.
+An architecture pass at arrival answers three questions per item. Does the change touch logic that exists per git provider, AI handler or server, and do the siblings need the same fix? Does it add a second copy of something `main` already has, or a new key, helper or code path where widening an existing one would do? Does it move a boundary, such as a new interface method, capability check or module others will import? A yes means asking for the shared shape before approving, or naming the sibling sites, rather than letting the same fix land one provider at a time. Drafts age while agents run: re-fetch every head and mergeable state at the moment you post, re-run cheap load-bearing measurements yourself, and re-read each draft against what earlier items in the same batch merged or closed. Treat a subagent's side remark as a hypothesis and check it against evidence you already hold, such as a CI traceback, before repeating it. A harness that measures API calls stubs the network before its first run, so nothing reaches a real endpoint by accident.
 
 ## Project direction
 
