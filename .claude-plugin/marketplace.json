@@ -1,8 +1,28 @@
 {
   "name": "pr-agent-skills",
-  "owner": { "name": "The-PR-Agent community" },
-  "description": "Optional Claude Code plugins that go with the PR-Agent skills.",
+  "owner": {
+    "name": "The-PR-Agent community"
+  },
+  "description": "Claude Code plugins for the PR-Agent skills: the maintainer and local-review skills, and the optional review-pair pane.",
   "plugins": [
+    {
+      "name": "pr-agent-maintainer",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./pr-agent-maintainer"
+      ],
+      "description": "Review, triage and reply to The-PR-Agent/pr-agent's own issues and pull requests: verify by running, draft for the maintainer, post or merge only on their word."
+    },
+    {
+      "name": "pr-agent-local-review",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./pr-agent-local-review"
+      ],
+      "description": "Run PR-Agent's own /review on a GitHub pull request from a local checkout, with the coding agent answering the prompt."
+    },
     {
       "name": "review-pair",
       "source": "./review-pair",

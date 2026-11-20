@@ -25,6 +25,13 @@ git clone https://github.com/The-PR-Agent/skills.git pr-agent-skills
 cp -r pr-agent-skills/pr-agent-maintainer <your agent's skills folder>/
 ```
 
+In Claude Code you can install them as plugins instead:
+
+```
+/plugin install pr-agent-maintainer --marketplace The-PR-Agent/skills
+/plugin install pr-agent-local-review --marketplace The-PR-Agent/skills
+```
+
 ## Add a skill
 
 1. Create a folder named after the skill, in lowercase words joined by hyphens.
